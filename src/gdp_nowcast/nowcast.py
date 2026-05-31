@@ -69,8 +69,13 @@ def run_backtests(
     raw: dict[str, pd.Series],
     model_names: list[str],
     target_kind: str = "qoq",
+    show_progress: bool = True,
 ) -> pd.DataFrame:
-    """Roda backtest realista vs ingênuo (look-ahead) para os modelos dados."""
+    """Roda backtest realista vs ingênuo (look-ahead) para os modelos dados.
+
+    Com ``show_progress=True`` (padrão) exibe uma barra de progresso por modelo
+    no stderr durante o backtest realista (etapa mais demorada).
+    """
     df = current_dataset(raw, target_kind=target_kind)
     target = df["pib_growth"].dropna()
     exog = df[[s.name for s in config.INDICATORS]].loc[: target.index.max()]
@@ -88,7 +93,10 @@ def run_backtests(
         def factory(n=name):
             return MODELS[n]()
 
-        real = bt.rolling_backtest(target, exog if name == "var" else None, factory)
+        label = f"{name} (realista)" if show_progress else None
+        real = bt.rolling_backtest(
+            target, exog if name == "var" else None, factory, progress_label=label
+        )
         naive = bt.naive_lookahead_backtest(
             target, exog if name == "var" else None, factory
         )

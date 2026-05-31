@@ -49,7 +49,9 @@ def main() -> int:
 
     if args.backtest:
         print("\n=== BACKTEST (realista vs look-ahead) ===")
+        print("Progresso (janelas re-treinadas por modelo):")
         table = nc.run_backtests(raw, models, target_kind=args.target)
+        print("\nResultados:")
         with_fmt = table.copy()
         for col in ("rmse", "mae", "mape", "bias"):
             with_fmt[col] = with_fmt[col].map(lambda v: f"{v:.3f}")

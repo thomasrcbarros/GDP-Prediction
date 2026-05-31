@@ -14,12 +14,37 @@ A diferença entre os dois erros quantifica o look-ahead bias.
 """
 from __future__ import annotations
 
+import sys
+import time
 from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
 
 import config
+
+
+def render_progress(label: str, done: int, total: int, t0: float, width: int = 24) -> None:
+    """Desenha uma barra de progresso de uma linha no stderr (sem dependências).
+
+    Usa retorno de carro (``\\r``) para atualizar a mesma linha; ao concluir
+    (``done == total``) emite a quebra de linha final.
+    """
+    if total <= 0:
+        return
+    frac = done / total
+    filled = int(width * frac)
+    bar = "#" * filled + "-" * (width - filled)
+    elapsed = time.time() - t0
+    eta = (elapsed / done * (total - done)) if done else 0.0
+    sys.stderr.write(
+        f"\r  {label:<22s} [{bar}] {done:>3d}/{total:<3d} "
+        f"{frac*100:5.1f}%  {elapsed:4.0f}s decorrido  ETA {eta:4.0f}s"
+    )
+    sys.stderr.flush()
+    if done >= total:
+        sys.stderr.write("\n")
+        sys.stderr.flush()
 
 
 def rmse(y_true, y_pred) -> float:
@@ -66,13 +91,20 @@ def rolling_backtest(
     exog: pd.DataFrame | None,
     model_factory,
     min_train: int = config.MIN_TRAIN_QUARTERS,
+    progress_label: str | None = None,
 ) -> BacktestResult:
-    """Backtest realista one-step-ahead com janela expansível."""
+    """Backtest realista one-step-ahead com janela expansível.
+
+    Se ``progress_label`` for fornecido, desenha uma barra de progresso no
+    stderr conforme as janelas são processadas.
+    """
     target = target.dropna()
     idx = target.index
     preds, actuals, dates = [], [], []
 
-    for i in range(min_train, len(target)):
+    total = len(target) - min_train
+    t0 = time.time()
+    for step, i in enumerate(range(min_train, len(target)), start=1):
         train_y = target.iloc[:i]
         train_x = exog.iloc[:i] if exog is not None else None
         try:
@@ -80,10 +112,14 @@ def rolling_backtest(
             model.fit(train_y, train_x)
             yhat = float(model.forecast(steps=1).iloc[0])
         except Exception:  # noqa: BLE001 - modelo pode não convergir em alguma janela
+            if progress_label is not None:
+                render_progress(progress_label, step, total, t0)
             continue
         preds.append(yhat)
         actuals.append(float(target.iloc[i]))
         dates.append(idx[i])
+        if progress_label is not None:
+            render_progress(progress_label, step, total, t0)
 
     pred_s = pd.Series(preds, index=pd.DatetimeIndex(dates), name="pred")
     act_s = pd.Series(actuals, index=pd.DatetimeIndex(dates), name="actual")
