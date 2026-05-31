@@ -70,11 +70,16 @@ def run_backtests(
     model_names: list[str],
     target_kind: str = "qoq",
     show_progress: bool = True,
+    results_out: dict | None = None,
 ) -> pd.DataFrame:
     """Roda backtest realista vs ingênuo (look-ahead) para os modelos dados.
 
     Com ``show_progress=True`` (padrão) exibe uma barra de progresso por modelo
     no stderr durante o backtest realista (etapa mais demorada).
+
+    Se ``results_out`` (dict) for fornecido, é preenchido com os
+    ``BacktestResult`` do regime realista por modelo (mais ``random_walk``),
+    para uso em plotagem.
     """
     df = current_dataset(raw, target_kind=target_kind)
     target = df["pib_growth"].dropna()
@@ -88,6 +93,8 @@ def run_backtests(
     # baseline
     base = bt.random_walk_baseline(target)
     rows.append({"model": "random_walk", "regime": "realista", **base.metrics})
+    if results_out is not None:
+        results_out["random_walk"] = base
 
     for name in model_names:
         def factory(n=name):
@@ -102,5 +109,7 @@ def run_backtests(
         )
         rows.append({"model": name, "regime": "realista", **real.metrics})
         rows.append({"model": name, "regime": "look-ahead", **naive.metrics})
+        if results_out is not None:
+            results_out[name] = real
 
     return pd.DataFrame(rows)

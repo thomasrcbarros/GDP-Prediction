@@ -25,19 +25,32 @@ def main() -> int:
     )
     parser.add_argument("--backtest", action="store_true", help="roda o backtesting")
     parser.add_argument(
+        "--plot",
+        action="store_true",
+        help="gera gráfico comparando os modelos (implica --backtest)",
+    )
+    parser.add_argument(
+        "--plot-file",
+        default="backtest_comparison.png",
+        help="caminho do PNG gerado por --plot",
+    )
+    parser.add_argument(
         "--refresh", action="store_true", help="força nova coleta dos dados"
     )
     args = parser.parse_args()
+    run_backtest = args.backtest or args.plot
 
     models = ALL if args.model == "all" else [args.model]
     raw = nc.load_data(refresh=args.refresh)
 
+    nowcasts: dict[str, float] = {}
     print("\n=== NOWCAST (crescimento do PIB, %s) ===" % args.target)
     for name in models:
         try:
             res = nc.nowcast(raw, model_name=name, target_kind=args.target)
             last_q = res["last_observed_quarter"]
             now_q = res["nowcast_quarter"]
+            nowcasts[name] = res["nowcast_value"]
             print(
                 f"  {name:7s} [{res['model']}]  "
                 f"último obs {last_q.year}Q{last_q.quarter} = "
@@ -47,10 +60,13 @@ def main() -> int:
         except Exception as exc:  # noqa: BLE001
             print(f"  {name:7s} ERRO: {exc}")
 
-    if args.backtest:
+    if run_backtest:
         print("\n=== BACKTEST (realista vs look-ahead) ===")
         print("Progresso (janelas re-treinadas por modelo):")
-        table = nc.run_backtests(raw, models, target_kind=args.target)
+        results: dict = {}
+        table = nc.run_backtests(
+            raw, models, target_kind=args.target, results_out=results
+        )
         print("\nResultados:")
         with_fmt = table.copy()
         for col in ("rmse", "mae", "mape", "bias"):
@@ -61,6 +77,18 @@ def main() -> int:
             "subestimar o erro. A diferença para o regime 'realista' é o viés de "
             "look-ahead."
         )
+
+        if args.plot:
+            from gdp_nowcast import plotting
+
+            path = plotting.plot_comparison(
+                results,
+                table,
+                args.plot_file,
+                nowcasts=nowcasts,
+                target_kind=args.target,
+            )
+            print(f"\nGráfico salvo em: {path}")
     return 0
 
 

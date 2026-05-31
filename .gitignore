@@ -9,3 +9,6 @@ venv/
 # Dados em cache (não versionar dados brutos)
 data/*.csv
 !data/.gitkeep
+
+# Gráficos gerados
+*.png

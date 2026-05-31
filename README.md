@@ -38,8 +38,17 @@ python scripts/run_nowcast.py --model all --backtest
 #   --model {arima,sarima,var,all}   escolhe o(s) modelo(s)
 #   --target {qoq,yoy}               crescimento T/T-1 ou T/T-4
 #   --backtest                       roda backtest realista vs look-ahead
+#   --plot                           gera gráfico comparativo (implica --backtest)
+#   --plot-file CAMINHO              PNG de saída (padrão: backtest_comparison.png)
 #   --refresh                        recoleta os dados
+
+# Com gráfico comparando os 3 modelos:
+python scripts/run_nowcast.py --model all --plot
 ```
+
+O `--plot` salva um PNG com três painéis: (1) previsões *one-step-ahead* de cada
+modelo vs. PIB observado no período de backtest; (2) RMSE por modelo (regime
+realista); (3) nowcast do próximo trimestre por modelo.
 
 Saída típica do backtest: uma tabela comparando, por modelo, o erro no regime
 **realista** (janela expansível, *one-step-ahead*) com o regime **look-ahead** (ajuste
