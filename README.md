@@ -42,14 +42,15 @@ confiança entram em nível):
 | **B** | PIM + PMS + PMC (indústria, serviços, comércio) | VARX |
 | **C** | IBC-Br + PIM + PMS + PMC | VARX |
 | **D** | IBC-Br + IPCA + câmbio (bloco macro) | VARX |
-| **E** | PIM + PMS + PMC + CAGED + confiança FGV — **sem IBC-Br** | VARX (+ dummy COVID) |
+| **E** | PIM + PMS + PMC + CAGED + confiança (consumidor + serviços) — **sem IBC-Br** | VARX (+ dummy COVID) |
 
 Variantes mantidas (a pedido): **baseline bridge[A]**, **ARIMA/SARIMA** (nos gráficos) e
 **apenas os VARX** entre os multivariados — o VAR puro e bridge[B/C] foram removidos.
 
-O **conjunto E** é um VARX de mercado de trabalho + expectativas (CAGED de empregos formais
-e Índice de Confiança da Indústria da FGV), **sem o IBC-Br**, e recebe uma **dummy de pico
-da COVID (2020Q1-Q2)** como regressor exógeno verdadeiro (não condicionado).
+O **conjunto E** é um VARX de mercado de trabalho + expectativas (CAGED de empregos formais,
+Índice de Confiança do Consumidor e Índice de Confiança de Serviços), **sem o IBC-Br**, e
+recebe uma **dummy de pico da COVID (2020Q1-Q2)** como regressor exógeno verdadeiro (não
+condicionado).
 
 O backtest agora reporta, além do RMSE total: **RMSE pré-2020** e **RMSE pós-2020**
 separados, e pode usar **janela rolante de estimação** (`--train-window N`, em trimestres;
@@ -71,12 +72,13 @@ ex.: `20` ≈ 5 anos) em vez da amostra completa.
 | IPCA (variação mensal) | BCB SGS | 433 | ~10 d | soma trimestral |
 | Câmbio R$/US$ (venda, média) | BCB SGS | 3698 | ~1 d | var % T/T |
 | CAGED — saldo de empregos formais | BCB SGS | 28763 ⚠️ | ~30 d | soma trimestral (nível) |
-| Confiança da Indústria — ICI/FGV | BCB SGS | 4393 ⚠️ | ~5 d | média trimestral (nível) |
+| Confiança do Consumidor | BCB SGS | 4393 | ~5 d | média trimestral (nível) |
+| Confiança de Serviços (dessaz) | BCB SGS | 20339 | ~10 d | média trimestral (nível) |
 
-> ⚠️ Os códigos SGS de **CAGED (28763)** e **confiança FGV (4393)** foram identificados
-> automaticamente e **devem ser confirmados no teste local** — basta rodar
-> `python scripts/fetch_data.py --refresh` e conferir os nomes/valores. Se algum não
-> bater, ajuste em `config.SERIES`.
+> ⚠️ O código SGS do **CAGED (28763)** foi identificado automaticamente e **deve ser
+> confirmado no teste local** — basta rodar `python scripts/fetch_data.py --refresh` e
+> conferir os nomes/valores. Os códigos de confiança (4393 = Consumidor, 20339 = Serviços
+> dessaz) foram confirmados na consulta ao SGS.
 
 As defasagens de publicação (`config.py`) são o núcleo da avaliação de *look-ahead bias*:
 permitem simular exatamente quais dados estariam disponíveis numa dada data de referência.

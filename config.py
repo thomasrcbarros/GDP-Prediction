@@ -74,11 +74,14 @@ SERIES: dict[str, SeriesSpec] = {
     "ipca": SeriesSpec("ipca", "bcb", "433", "M", "sum", "rate", 10),     # IPCA var% mensal
     "cambio": SeriesSpec("cambio", "bcb", "3698", "M", "mean", "growth", 1),  # R$/US$ venda média
     # Bloco mercado de trabalho + expectativas (variante E do VARX)
-    # ATENÇÃO: confirmar os códigos SGS abaixo no teste local (ver PR).
-    #   caged   -> CAGED saldo de empregos formais (28763 = total mensal).
-    #   confemp -> FGV: Índice de Confiança do Empresário/Indústria (ICI, 4393).
+    # ATENÇÃO: confirmar o código do CAGED no teste local (ver PR).
+    #   caged    -> CAGED saldo de empregos formais (28763 = total mensal).
+    #   confcons -> Índice de Confiança do Consumidor (SGS 4393), mensal.
+    #   confserv -> Sondagem de Serviços – Índice de Confiança dessaz (SGS 20339),
+    #               mensal, série inicia em 2008-06.
     "caged": SeriesSpec("caged", "bcb", "28763", "M", "sum", "level", 30),
-    "confemp": SeriesSpec("confemp", "bcb", "4393", "M", "mean", "level", 5),
+    "confcons": SeriesSpec("confcons", "bcb", "4393", "M", "mean", "level", 5),
+    "confserv": SeriesSpec("confserv", "bcb", "20339", "M", "mean", "level", 10),
 }
 
 INDICATORS = list(SERIES.values())
@@ -91,7 +94,7 @@ FEATURE_SETS: dict[str, list[str]] = {
     "C": ["ibcbr", "pim", "pms", "pmc"],    # tudo
     "D": ["ibcbr", "ipca", "cambio"],       # bloco macro
     # E: mercado de trabalho + expectativas; SEM IBC-Br (requisito do usuário).
-    "E": ["pim", "pms", "pmc", "caged", "confemp"],
+    "E": ["pim", "pms", "pmc", "caged", "confcons", "confserv"],
 }
 PRINCIPAL_SET = "A"
 
@@ -112,7 +115,7 @@ MODEL_VARIANTS: list[tuple[str, str | None]] = [
     ("varx", "B"),
     ("varx", "C"),
     ("varx", "D"),
-    ("varx", "E"),     # CAGED + confiança FGV + setorial, com dummy COVID exógena
+    ("varx", "E"),     # CAGED + confiança (consumidor+serviços) + setorial, dummy COVID
 ]
 
 # Parâmetros de modelagem / backtest -----------------------------------------
