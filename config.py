@@ -70,9 +70,15 @@ SERIES: dict[str, SeriesSpec] = {
     # PMS/PMC: número-índice de volume COM ajuste sazonal (IBGE SIDRA)
     "pms": SeriesSpec("pms", "ibge", "8688:7168:11046[56726]|12355[107071]", "M", "mean", "growth", 45),
     "pmc": SeriesSpec("pmc", "ibge", "8880:7170:11046[56734]", "M", "mean", "growth", 45),
-    # Bloco macro (variante D do VAR)
+    # Bloco macro (variante D do VAR/VARX)
     "ipca": SeriesSpec("ipca", "bcb", "433", "M", "sum", "rate", 10),     # IPCA var% mensal
     "cambio": SeriesSpec("cambio", "bcb", "3698", "M", "mean", "growth", 1),  # R$/US$ venda média
+    # Bloco mercado de trabalho + expectativas (variante E do VARX)
+    # ATENÇÃO: confirmar os códigos SGS abaixo no teste local (ver PR).
+    #   caged   -> CAGED saldo de empregos formais (28763 = total mensal).
+    #   confemp -> FGV: Índice de Confiança do Empresário/Indústria (ICI, 4393).
+    "caged": SeriesSpec("caged", "bcb", "28763", "M", "sum", "level", 30),
+    "confemp": SeriesSpec("confemp", "bcb", "4393", "M", "mean", "level", 5),
 }
 
 INDICATORS = list(SERIES.values())
@@ -83,7 +89,9 @@ FEATURE_SETS: dict[str, list[str]] = {
     "A": ["ibcbr"],                          # IBC-Br (prévia oficial do PIB) -> baseline
     "B": ["pim", "pms", "pmc"],              # setorial (oferta)
     "C": ["ibcbr", "pim", "pms", "pmc"],    # tudo
-    "D": ["ibcbr", "ipca", "cambio"],       # bloco macro (apenas VAR/VARX)
+    "D": ["ibcbr", "ipca", "cambio"],       # bloco macro
+    # E: mercado de trabalho + expectativas; SEM IBC-Br (requisito do usuário).
+    "E": ["pim", "pms", "pmc", "caged", "confemp"],
 }
 PRINCIPAL_SET = "A"
 
@@ -91,19 +99,20 @@ PRINCIPAL_SET = "A"
 # então a bridge sobre o IBC-Br é o padrão a ser superado pelos demais modelos.
 BASELINE_VARIANT = ("bridge", "A")
 
+# Variantes que recebem a dummy de pico da COVID (2020Q1-Q2) como exógena.
+COVID_DUMMY_VARIANTS = {("varx", "E")}
+
 # Combinações (modelo, conjunto) avaliadas no backtest comparativo.
-# ARIMA/SARIMA são univariados (sem conjunto).
+# Mantemos a baseline (bridge[A]), ARIMA/SARIMA nos gráficos e SÓ os VARX
+# entre os multivariados (VAR puro e bridge B/C foram removidos a pedido).
 MODEL_VARIANTS: list[tuple[str, str | None]] = [
     ("arima", None),
     ("sarima", None),
     ("bridge", "A"),   # baseline (IBC-Br)
-    ("bridge", "B"),
-    ("bridge", "C"),
-    ("var", "B"),
-    ("var", "C"),
     ("varx", "B"),
     ("varx", "C"),
     ("varx", "D"),
+    ("varx", "E"),     # CAGED + confiança FGV + setorial, com dummy COVID exógena
 ]
 
 # Parâmetros de modelagem / backtest -----------------------------------------

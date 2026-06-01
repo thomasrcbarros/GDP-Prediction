@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """CLI principal: gera nowcast do PIB e roda backtests.
 
-Suporta os conjuntos de variáveis A/B/C/D (ver config.FEATURE_SETS). Para um
-modelo multivariado, use --set; com --model all roda todas as combinações de
-config.MODEL_VARIANTS.
+Suporta os conjuntos de variáveis A/B/C/D/E (ver config.FEATURE_SETS). Para um
+modelo multivariado, use --set; com --model all roda config.MODEL_VARIANTS.
+O backtest reporta RMSE pré/pós-2020 e aceita --train-window (janela rolante de
+estimação) além da amostra completa.
 """
 from __future__ import annotations
 
@@ -38,6 +39,9 @@ def main() -> int:
     p.add_argument("--backtest", action="store_true", help="roda o backtesting")
     p.add_argument("--plot", action="store_true", help="gera gráfico (implica --backtest)")
     p.add_argument("--plot-file", default="backtest_comparison.png")
+    p.add_argument("--train-window", type=int, default=None,
+                   help="nº de trimestres da janela rolante de estimação "
+                        "(ex.: 20 ≈ 5 anos); padrão = amostra completa")
     p.add_argument("--refresh", action="store_true", help="força nova coleta dos dados")
     args = p.parse_args()
     run_backtest = args.backtest or args.plot
@@ -59,18 +63,23 @@ def main() -> int:
             print(f"  {label:10s} ERRO: {exc}")
 
     if run_backtest:
-        print("\n=== BACKTEST (realista vs look-ahead) ===")
+        win = f"janela rolante de {args.train_window}T" if args.train_window else "amostra completa"
+        print(f"\n=== BACKTEST (realista vs look-ahead) — estimação: {win} ===")
         print("Progresso (janelas re-treinadas por variante):")
         results: dict = {}
-        table = nc.run_backtests(raw, variants, target_kind=args.target, results_out=results)
+        table = nc.run_backtests(raw, variants, target_kind=args.target,
+                                 results_out=results, train_window=args.train_window)
         print("\nResultados:")
         fmt = table.copy()
-        for col in ("rmse", "rmse_ex_covid", "mae", "mape", "bias"):
+        for col in ("rmse", "rmse_ex_covid", "rmse_pre2020", "rmse_pos2020", "mae", "mape", "bias"):
             if col in fmt:
                 fmt[col] = fmt[col].map(lambda v: f"{v:.3f}")
-        print(fmt.to_string(index=False))
-        print("\nNota: 'look-ahead' usa informação futura no ajuste e subestima o erro; "
-              "a diferença para 'realista' é o viés de look-ahead.")
+        cols = ["model", "regime", "rmse", "rmse_pre2020", "rmse_pos2020",
+                "rmse_ex_covid", "mae", "bias", "n"]
+        cols = [c for c in cols if c in fmt.columns]
+        print(fmt[cols].to_string(index=False))
+        print("\nNota: rmse_pre2020/pos2020 = erro antes/depois de 2020 (item 3). "
+              "'look-ahead' usa informação futura e subestima o erro.")
 
         if args.plot:
             from gdp_nowcast import plotting

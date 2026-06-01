@@ -50,6 +50,47 @@ def test_var_uses_exog_and_forecasts():
     assert m.selected_lag is not None
 
 
+def test_varx_accepts_exog_dummy_column():
+    y = _series()
+    rng = np.random.default_rng(11)
+    n = len(y)
+    exog = pd.DataFrame(
+        {
+            "pim": 0.5 * y.values + rng.normal(scale=0.4, size=n),
+            "covid_peak": dataset.covid_peak_dummy(y.index)["covid_peak"].values,
+        },
+        index=y.index,
+    )
+    m = VarxModel(maxlags=2, exog_cols=["covid_peak"]).fit(y, exog)
+    # covid_peak é exógena -> não vira coluna endógena do sistema
+    assert "covid_peak" not in m._columns
+    assert "pim" in m._columns
+    fut = pd.DataFrame({"pim": [1.0], "covid_peak": [0.0]})
+    fc = m.forecast(1, exog_future=fut)
+    assert np.isfinite(fc.iloc[0])
+
+
+def test_rmse_period_splits_pre_post():
+    idx = pd.date_range("2018-01-01", periods=12, freq="QS")
+    actual = pd.Series(np.zeros(12), index=idx, name="actual")
+    pred = pd.Series(np.ones(12), index=idx, name="pred")  # erro constante = 1
+    res = bt.BacktestResult("x", pred, actual, bt.compute_metrics(actual.values, pred.values))
+    assert abs(bt.rmse_period(res, end="2020-01-01") - 1.0) < 1e-9
+    assert abs(bt.rmse_period(res, start="2020-01-01") - 1.0) < 1e-9
+    # janela vazia -> nan
+    assert np.isnan(bt.rmse_period(res, start="2030-01-01"))
+
+
+def test_rolling_backtest_train_window_limits_history():
+    y = _series(n=40)
+    res = bt.rolling_backtest(
+        y, None, lambda: ArimaModel(max_p=1, max_d=1, max_q=1),
+        min_train=20, train_window=12,
+    )
+    assert len(res.predictions) > 0
+    assert np.isfinite(res.metrics["rmse"])
+
+
 def test_varx_conditions_on_contemporaneous_indicators():
     y = _series()
     rng = np.random.default_rng(9)

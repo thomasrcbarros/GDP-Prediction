@@ -30,43 +30,34 @@ O **IBC-Br** é o índice de atividade econômica do Banco Central — a *prévi
 PIB. Por isso a **bridge sobre o IBC-Br (conjunto A)** é adotada como **baseline do
 projeto**: é o número que qualquer modelo mais elaborado precisa superar para se justificar.
 
-### Conjuntos de variáveis (A/B/C/D)
+### Conjuntos de variáveis (A/B/C/D/E)
 
-Os modelos multivariados são testados com diferentes conjuntos de indicadores (todos
-entram como **variação % T/T dessazonalizada**, mesma escala do alvo):
+Os modelos multivariados são testados com diferentes conjuntos de indicadores (os de
+atividade entram como **variação % T/T dessazonalizada**, mesma escala do alvo; CAGED e
+confiança entram em nível):
 
 | Conjunto | Variáveis | Uso |
 |----------|-----------|-----|
 | **A** | IBC-Br | baseline (bridge) |
-| **B** | PIM + PMS + PMC (indústria, serviços, comércio) | bridge, VAR, VARX |
-| **C** | IBC-Br + PIM + PMS + PMC | bridge, VAR, VARX |
+| **B** | PIM + PMS + PMC (indústria, serviços, comércio) | VARX |
+| **C** | IBC-Br + PIM + PMS + PMC | VARX |
 | **D** | IBC-Br + IPCA + câmbio (bloco macro) | VARX |
+| **E** | PIM + PMS + PMC + CAGED + confiança FGV — **sem IBC-Br** | VARX (+ dummy COVID) |
 
-No backtest (janela de teste comum, treino com histórico completo do PIB), o RMSE fica
-(números variam um pouco a cada coleta de dados):
+Variantes mantidas (a pedido): **baseline bridge[A]**, **ARIMA/SARIMA** (nos gráficos) e
+**apenas os VARX** entre os multivariados — o VAR puro e bridge[B/C] foram removidos.
 
-| Variante | RMSE | RMSE sem 2020 |
-|----------|------|----------------|
-| **bridge[A] — IBC-Br (baseline)** | **~0.45** | **~0.44** |
-| varx[D] — IBC-Br + IPCA + câmbio | ~0.50 | ~0.41 |
-| bridge[C] — todos | ~0.74 | ~0.59 |
-| varx[C] — todos | ~1.33 | ~1.13 |
-| bridge[B] — setorial | ~1.56 | ~0.90 |
-| varx[B] — setorial | ~1.69 | ~1.60 |
-| média histórica | ~2.12 | ~0.57 |
-| ARIMA / SARIMA | ~2.13 / ~2.13 | ~0.65 / ~0.67 |
-| random walk | ~3.14 | ~0.96 |
-| VAR[B/C] (prevê indicadores) | ~5.65 / ~5.97 | ~4.68 / ~4.85 |
+O **conjunto E** é um VARX de mercado de trabalho + expectativas (CAGED de empregos formais
+e Índice de Confiança da Indústria da FGV), **sem o IBC-Br**, e recebe uma **dummy de pico
+da COVID (2020Q1-Q2)** como regressor exógeno verdadeiro (não condicionado).
 
-**Conclusão empírica:** a **bridge sobre o IBC-Br (baseline)** é o melhor nowcast — o
-IBC-Br, sendo a prévia oficial do PIB, é quase imbatível como regressor contemporâneo. O
-**VARX[D]** (IBC-Br + IPCA + câmbio, condicional) praticamente empata com o baseline e até
-o supera fora de 2020. O salto mais importante é VAR → VARX: condicionar nos indicadores já
-publicados derruba o RMSE de ~5.7 para ~1.3–1.7 (e ~0.5 no conjunto D), confirmando que o
-defeito do VAR puro era prever os indicadores em vez de usá-los. O choque da COVID (2020)
-é tratado como **quebra estrutural** via dummies de intervenção, e o RMSE é reportado
-também
-excluindo 2020. (Números variam um pouco a cada coleta de dados.)
+O backtest agora reporta, além do RMSE total: **RMSE pré-2020** e **RMSE pós-2020**
+separados, e pode usar **janela rolante de estimação** (`--train-window N`, em trimestres;
+ex.: `20` ≈ 5 anos) em vez da amostra completa.
+
+> Os números de RMSE serão preenchidos após a execução local (`--model all --backtest`).
+> Em rodadas anteriores, a referência ficou em torno de: bridge[A] ~0.45, varx[D] ~0.50,
+> varx[C] ~1.3, varx[B] ~1.7, ARIMA/SARIMA ~2.1, random walk ~3.1.
 
 ## Indicadores
 
@@ -79,6 +70,13 @@ excluindo 2020. (Números variam um pouco a cada coleta de dados.)
 | PMC volume varejo (dessaz) | IBGE SIDRA | 8880 / 7170 | ~45 d | var % T/T |
 | IPCA (variação mensal) | BCB SGS | 433 | ~10 d | soma trimestral |
 | Câmbio R$/US$ (venda, média) | BCB SGS | 3698 | ~1 d | var % T/T |
+| CAGED — saldo de empregos formais | BCB SGS | 28763 ⚠️ | ~30 d | soma trimestral (nível) |
+| Confiança da Indústria — ICI/FGV | BCB SGS | 4393 ⚠️ | ~5 d | média trimestral (nível) |
+
+> ⚠️ Os códigos SGS de **CAGED (28763)** e **confiança FGV (4393)** foram identificados
+> automaticamente e **devem ser confirmados no teste local** — basta rodar
+> `python scripts/fetch_data.py --refresh` e conferir os nomes/valores. Se algum não
+> bater, ajuste em `config.SERIES`.
 
 As defasagens de publicação (`config.py`) são o núcleo da avaliação de *look-ahead bias*:
 permitem simular exatamente quais dados estariam disponíveis numa dada data de referência.
@@ -98,23 +96,30 @@ python scripts/fetch_data.py
 # 2. Gera o nowcast e roda o backtesting
 python scripts/run_nowcast.py --model all --backtest
 #   --model {arima,sarima,var,varx,bridge,all}  escolhe o(s) modelo(s)
-#   --set {A,B,C,D}                  conjunto de variáveis (modelos multivariados)
+#   --set {A,B,C,D,E}                conjunto de variáveis (modelos multivariados)
 #   --target {qoq,yoy}               crescimento T/T-1 ou T/T-4
 #   --backtest                       roda backtest realista vs look-ahead
+#   --train-window N                 janela rolante de estimação (N trimestres; ~20 = 5 anos)
 #   --plot                           gera gráfico comparativo (implica --backtest)
 #   --plot-file CAMINHO              PNG de saída (padrão: backtest_comparison.png)
 #   --refresh                        recoleta os dados
 
-# Melhor modelo isolado (bridge com IBC-Br):
+# Baseline (bridge com IBC-Br):
 python scripts/run_nowcast.py --model bridge --set A --backtest
+
+# Novo VARX de trabalho+expectativas (sem IBC-Br, com dummy COVID):
+python scripts/run_nowcast.py --model varx --set E --backtest
+
+# Janela rolante de 5 anos (20 trimestres) vs amostra completa:
+python scripts/run_nowcast.py --model varx --set E --backtest --train-window 20
 
 # Com gráfico comparando todas as variantes:
 python scripts/run_nowcast.py --model all --plot
 ```
 
 > Com `--model all`, o backtest re-treina ARIMA/SARIMA com busca de ordem em cada janela
-> e roda 9 variantes — leva vários minutos. Para iterar rápido, rode um modelo/conjunto
-> por vez (ex.: `--model bridge --set A`).
+> — leva vários minutos. Para iterar rápido, rode um modelo/conjunto por vez
+> (ex.: `--model varx --set E`).
 
 O `--plot` salva um PNG com três painéis: (1) previsões *one-step-ahead* de cada
 modelo vs. PIB observado no período de backtest; (2) RMSE por modelo (regime

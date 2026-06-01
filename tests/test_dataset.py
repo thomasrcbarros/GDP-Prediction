@@ -10,6 +10,22 @@ def _monthly(start, periods, step=1.0, base=100.0):
     return pd.Series(base + step * np.arange(periods), index=idx)
 
 
+def test_covid_peak_dummy_marks_only_2020q1q2():
+    idx = pd.date_range("2019-01-01", periods=10, freq="QS")
+    d = dataset.covid_peak_dummy(idx)
+    assert list(d.columns) == ["covid_peak"]
+    assert d.loc["2020-01-01", "covid_peak"] == 1.0
+    assert d.loc["2020-04-01", "covid_peak"] == 1.0
+    assert d.loc["2020-07-01", "covid_peak"] == 0.0
+    assert d.loc["2019-01-01", "covid_peak"] == 0.0
+    assert d["covid_peak"].sum() == 2.0
+
+
+def test_feature_set_e_excludes_ibcbr():
+    assert "ibcbr" not in config.FEATURE_SETS["E"]
+    assert {"caged", "confemp"}.issubset(config.FEATURE_SETS["E"])
+
+
 def test_to_quarterly_mean_aligns_to_quarter_start():
     s = _monthly("2020-01-01", 6, step=1.0, base=10.0)  # 10..15
     q = dataset.to_quarterly(s, "mean")

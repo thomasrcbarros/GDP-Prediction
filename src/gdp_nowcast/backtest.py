@@ -93,16 +93,19 @@ def rolling_backtest(
     min_train: int = config.MIN_TRAIN_QUARTERS,
     progress_label: str | None = None,
     score_start: pd.Timestamp | None = None,
+    train_window: int | None = None,
 ) -> BacktestResult:
-    """Backtest realista one-step-ahead com janela expansível.
+    """Backtest realista one-step-ahead.
 
-    Se ``progress_label`` for fornecido, desenha uma barra de progresso no
-    stderr conforme as janelas são processadas.
+    Por padrão a janela de treino é **expansível** (usa todo o histórico até a
+    origem). Se ``train_window`` (nº de trimestres) for dado, usa uma **janela
+    rolante** de tamanho fixo — ex.: ``train_window=20`` ≈ 5 anos —, descartando
+    observações antigas. Isso permite comparar "amostra completa" vs "janela
+    rolante" de estimação.
 
-    ``score_start`` (opcional) define a partir de qual data as previsões entram
-    na avaliação. O treino continua usando todo o histórico disponível — isso
-    permite que modelos univariados treinem com a série completa do PIB e ainda
-    assim sejam comparados a outros modelos numa janela de teste comum.
+    ``score_start`` define a partir de qual data as previsões entram na avaliação
+    (janela de teste comum entre variantes). ``progress_label`` desenha a barra
+    de progresso no stderr.
     """
     target = target.dropna()
     if exog is not None:
@@ -118,8 +121,9 @@ def rolling_backtest(
     total = len(steps_idx)
     t0 = time.time()
     for step, i in enumerate(steps_idx, start=1):
-        train_y = target.iloc[:i]
-        train_x = exog.iloc[:i] if exog is not None else None
+        lo = max(0, i - train_window) if train_window else 0
+        train_y = target.iloc[lo:i]
+        train_x = exog.iloc[lo:i] if exog is not None else None
         # exógenas do trimestre previsto: dummies de COVID (conhecidas) e/ou
         # indicadores contemporâneos já publicados (caso da bridge equation).
         fut_x = exog.iloc[[i]] if exog is not None else None
@@ -237,3 +241,19 @@ def rmse_excluding_years(result: BacktestResult, years: list[int]) -> float:
     if not mask.any():
         return float("nan")
     return rmse(result.actuals[mask].values, result.predictions[mask].values)
+
+
+def rmse_period(result: BacktestResult, start=None, end=None) -> float:
+    """RMSE restrito a um intervalo [start, end) de datas das previsões.
+
+    Útil para comparar desempenho pré-2020 vs pós-2020 separadamente.
+    """
+    idx = result.actuals.index
+    mask = pd.Series(True, index=idx)
+    if start is not None:
+        mask &= idx >= pd.Timestamp(start)
+    if end is not None:
+        mask &= idx < pd.Timestamp(end)
+    if not mask.any():
+        return float("nan")
+    return rmse(result.actuals[mask.values].values, result.predictions[mask.values].values)

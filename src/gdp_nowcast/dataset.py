@@ -78,6 +78,21 @@ def covid_dummies(index: pd.DatetimeIndex) -> pd.DataFrame:
     return pd.DataFrame(data, index=idx)
 
 
+COVID_PEAK_QUARTERS = ["2020-01-01", "2020-04-01"]  # 2020Q1 e 2020Q2
+
+
+def covid_peak_dummy(index: pd.DatetimeIndex) -> pd.DataFrame:
+    """Dummy única (1 coluna) marcando o pico do choque da COVID: 2020Q1-Q2.
+
+    Diferente de ``covid_dummies`` (um pulso por trimestre de 2020), aqui há uma
+    só variável binária valendo 1 em 2020Q1 e 2020Q2 e 0 no resto — usada como
+    regressor exógeno no VARX[E]. Em períodos futuros vale 0.
+    """
+    idx = pd.DatetimeIndex(index)
+    peak = pd.DatetimeIndex([pd.Timestamp(q) for q in COVID_PEAK_QUARTERS])
+    return pd.DataFrame({"covid_peak": idx.isin(peak).astype(float)}, index=idx)
+
+
 def _period_end(quarter_start: pd.Timestamp) -> pd.Timestamp:
     """Último dia do trimestre cujo início é ``quarter_start``."""
     return quarter_start + pd.offsets.QuarterEnd(0)

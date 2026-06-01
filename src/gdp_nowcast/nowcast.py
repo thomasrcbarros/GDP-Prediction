@@ -48,13 +48,30 @@ def _variant_label(model_name: str, feature_set: str | None) -> str:
     return model_name if feature_set is None else f"{model_name}[{feature_set}]"
 
 
+def _uses_covid_dummy(model_name, feature_set) -> bool:
+    return (model_name, feature_set) in config.COVID_DUMMY_VARIANTS
+
+
 def _exog_for(model_name, feature_set, index, feats):
-    """Matriz exógena de um modelo multivariado, alinhada a ``index``."""
+    """Matriz exógena de um modelo multivariado, alinhada a ``index``.
+
+    Para variantes em ``config.COVID_DUMMY_VARIANTS`` anexa a dummy de pico da
+    COVID (2020Q1-Q2) como regressor exógeno verdadeiro (coluna ``covid_peak``).
+    """
     cols = config.FEATURE_SETS[feature_set]
     ind = feats[cols].reindex(index)
     if model_name == "bridge":
         return pd.concat([ind, dataset.covid_dummies(index)], axis=1)
-    return ind  # VAR: indicadores são endógenos
+    if _uses_covid_dummy(model_name, feature_set):
+        return pd.concat([ind, dataset.covid_peak_dummy(index)], axis=1)
+    return ind  # VAR/VARX: indicadores são endógenos
+
+
+def _model_factory(model_name, feature_set):
+    """Cria a fábrica do modelo, injetando exog_cols quando há dummy COVID."""
+    if _uses_covid_dummy(model_name, feature_set):
+        return lambda: MODELS[model_name](exog_cols=["covid_peak"])
+    return lambda: MODELS[model_name]()
 
 
 def nowcast(raw, model_name="arima", feature_set=None, target_kind="qoq") -> dict:
@@ -68,14 +85,18 @@ def nowcast(raw, model_name="arima", feature_set=None, target_kind="qoq") -> dic
         model.fit(target_full, exog)
         fc = model.forecast(1, exog_future=dataset.covid_dummies(pd.DatetimeIndex([next_q])))
     elif model_name in ("var", "varx"):
-        cols = config.FEATURE_SETS[feature_set]
-        aligned = pd.concat([target_full, feats[cols]], axis=1).dropna()
-        model.fit(aligned["pib_growth"], aligned[cols])
+        model = _model_factory(model_name, feature_set)()
+        idx = pd.DatetimeIndex(list(target_full.index) + [next_q])
+        exog_all = _exog_for(model_name, feature_set, idx, feats)
+        aligned = pd.concat([target_full, exog_all.loc[target_full.index]], axis=1).dropna()
+        model.fit(aligned["pib_growth"], aligned[exog_all.columns])
         # VARX condiciona nos indicadores contemporâneos já publicados do
         # trimestre a prever; VAR ignora exog_future.
-        fut = feats[cols].reindex([next_q]) if model_name == "varx" else None
-        if model_name == "varx" and fut.isna().any().any():
-            raise ValueError(f"Indicadores de {next_q.year}Q{next_q.quarter} indisponíveis.")
+        fut = exog_all.reindex([next_q]) if model_name == "varx" else None
+        if model_name == "varx":
+            ind_cols = config.FEATURE_SETS[feature_set]
+            if fut[ind_cols].isna().any().any():
+                raise ValueError(f"Indicadores de {next_q.year}Q{next_q.quarter} indisponíveis.")
         fc = model.forecast(1, exog_future=fut)
     elif model_name == "bridge":
         idx = pd.DatetimeIndex(list(target_full.index) + [next_q])
@@ -113,13 +134,21 @@ def _common_score_start(target_full, feats, variants):
     return max(starts)
 
 
+COVID_SPLIT = "2020-01-01"  # fronteira pré/pós-2020 para o RMSE por janela
+
+
 def run_backtests(raw, variants=None, target_kind="qoq", show_progress=True,
-                  results_out=None, exclude_years=None) -> pd.DataFrame:
+                  results_out=None, exclude_years=None, train_window=None) -> pd.DataFrame:
     """Backtest comparativo (realista vs look-ahead) das combinações modelo×conjunto.
 
     ``variants`` é uma lista de tuplas ``(modelo, conjunto|None)``; por padrão
-    usa ``config.MODEL_VARIANTS``. Todos avaliados numa janela de teste comum;
-    inclui baselines (random walk, média) e coluna ``rmse_ex_covid``.
+    usa ``config.MODEL_VARIANTS``. Todos avaliados numa janela de teste comum.
+
+    Colunas de RMSE: ``rmse`` (toda a janela), ``rmse_ex_covid`` (excluindo
+    ``exclude_years``), ``rmse_pre2020`` e ``rmse_pos2020`` (item 3 do pedido).
+
+    ``train_window`` (nº de trimestres) ativa a **janela rolante de estimação**
+    em vez da amostra completa (item 4). Ex.: ``train_window=20`` ≈ 5 anos.
     """
     variants = variants or config.MODEL_VARIANTS
     exclude_years = exclude_years if exclude_years is not None else [2020]
@@ -133,6 +162,8 @@ def run_backtests(raw, variants=None, target_kind="qoq", show_progress=True,
         rows.append({
             "model": label, "regime": regime, **res.metrics,
             "rmse_ex_covid": bt.rmse_excluding_years(res, exclude_years),
+            "rmse_pre2020": bt.rmse_period(res, end=COVID_SPLIT),
+            "rmse_pos2020": bt.rmse_period(res, start=COVID_SPLIT),
         })
         if results_out is not None and regime == "realista":
             results_out[label] = res
@@ -143,13 +174,12 @@ def run_backtests(raw, variants=None, target_kind="qoq", show_progress=True,
     for model_name, fs in variants:
         label = _variant_label(model_name, fs)
 
-        def factory(n=model_name):
-            return MODELS[n]()
-
         if model_name in UNIVARIATE:
+            factory = lambda n=model_name: MODELS[n]()  # noqa: E731
             tgt = target_full
             exog = dataset.covid_dummies(target_full.index)
         else:
+            factory = _model_factory(model_name, fs)
             cols = config.FEATURE_SETS[fs]
             aligned = pd.concat([target_full, feats[cols]], axis=1).dropna()
             tgt = aligned["pib_growth"]
@@ -157,7 +187,7 @@ def run_backtests(raw, variants=None, target_kind="qoq", show_progress=True,
 
         plabel = label if show_progress else None
         real = bt.rolling_backtest(tgt, exog, factory, progress_label=plabel,
-                                   score_start=score_start)
+                                   score_start=score_start, train_window=train_window)
         naive = bt.naive_lookahead_backtest(tgt, exog, factory)
         emit(label, real)
         emit(label, naive, regime="look-ahead")
