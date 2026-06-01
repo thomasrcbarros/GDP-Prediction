@@ -15,7 +15,9 @@ _COLORS = {
     "arima": "#1f77b4",
     "sarima": "#ff7f0e",
     "var": "#2ca02c",
+    "bridge": "#d62728",
     "random_walk": "#999999",
+    "media": "#bbbbbb",
 }
 
 

@@ -20,8 +20,14 @@ class NowcastModel(abc.ABC):
         ...
 
     @abc.abstractmethod
-    def forecast(self, steps: int = 1) -> pd.Series:
-        """Retorna previsão de ``steps`` passos para ``pib_growth``."""
+    def forecast(self, steps: int = 1, exog_future: pd.DataFrame | None = None) -> pd.Series:
+        """Retorna previsão de ``steps`` passos para ``pib_growth``.
+
+        ``exog_future`` traz os regressores exógenos do(s) período(s) previsto(s)
+        — usado por modelos com intervenção (dummies de COVID) e pela bridge
+        equation (indicadores contemporâneos já observados). Modelos que não
+        usam exógenas ignoram o argumento.
+        """
         ...
 
     def summary(self) -> str:

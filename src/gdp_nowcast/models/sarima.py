@@ -1,4 +1,8 @@
-"""Modelo SARIMA (sazonal) com seleção parcial de ordem por AIC."""
+"""Modelo SARIMA (sazonal) com seleção parcial de ordem por AIC.
+
+Aceita regressores exógenos opcionais (ex.: dummies de intervenção da COVID),
+repassados ao SARIMAX do statsmodels.
+"""
 from __future__ import annotations
 
 import itertools
@@ -10,6 +14,7 @@ from statsmodels.tsa.statespace.sarimax import SARIMAX
 import config
 
 from .base import NowcastModel
+from ._exog import align_exog, drop_constant_columns
 
 
 class SarimaModel(NowcastModel):
@@ -29,8 +34,9 @@ class SarimaModel(NowcastModel):
         self.order = None
         self.seasonal_order = None
         self._result = None
+        self._exog_cols: list[str] = []
 
-    def _select_order(self, y: pd.Series):
+    def _select_order(self, y: pd.Series, exog):
         best_aic = float("inf")
         best = ((1, 1, 1), (0, 1, 1, self.s))
         pdq = list(
@@ -46,6 +52,7 @@ class SarimaModel(NowcastModel):
                     try:
                         res = SARIMAX(
                             y,
+                            exog=exog,
                             order=order,
                             seasonal_order=sorder,
                             enforce_stationarity=False,
@@ -59,11 +66,16 @@ class SarimaModel(NowcastModel):
 
     def fit(self, target: pd.Series, exog: pd.DataFrame | None = None) -> "SarimaModel":
         y = target.dropna()
-        self.order, self.seasonal_order = self._select_order(y)
+        exog = drop_constant_columns(exog)
+        if exog is not None:
+            exog = exog.loc[y.index]
+        self._exog_cols = list(exog.columns) if exog is not None else []
+        self.order, self.seasonal_order = self._select_order(y, exog)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             self._result = SARIMAX(
                 y,
+                exog=exog,
                 order=self.order,
                 seasonal_order=self.seasonal_order,
                 enforce_stationarity=False,
@@ -71,10 +83,12 @@ class SarimaModel(NowcastModel):
             ).fit(disp=False)
         return self
 
-    def forecast(self, steps: int = 1) -> pd.Series:
+    def forecast(self, steps: int = 1, exog_future: pd.DataFrame | None = None) -> pd.Series:
         if self._result is None:
             raise RuntimeError("Modelo não treinado.")
-        return self._result.forecast(steps=steps)
+        exog_future = align_exog(exog_future, self._exog_cols, steps)
+        return self._result.forecast(steps=steps, exog=exog_future)
 
     def summary(self) -> str:
-        return f"SARIMA{self.order}x{self.seasonal_order}"
+        extra = f"+{len(self._exog_cols)} exóg" if self._exog_cols else ""
+        return f"SARIMA{self.order}x{self.seasonal_order}{extra}"

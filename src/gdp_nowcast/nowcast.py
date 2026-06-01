@@ -9,6 +9,10 @@ from . import backtest as bt
 from . import data_sources, dataset
 from .models import MODELS
 
+# Modelos univariados (só usam o passado do PIB); recebem dummies de COVID como
+# intervenção. Os demais usam os indicadores antecedentes.
+UNIVARIATE = {"arima", "sarima"}
+
 
 def load_data(refresh: bool = False) -> dict[str, pd.Series]:
     return data_sources.load_all(refresh=refresh)
@@ -28,38 +32,78 @@ def current_dataset(
     )
 
 
+def _prepare(raw: dict[str, pd.Series], target_kind: str):
+    """Prepara as entradas trimestrais.
+
+    Retorna:
+        target_full: crescimento do PIB com todo o histórico (ex.: 2003+).
+        indicators_q: indicadores trimestrais (pode incluir o trimestre
+            seguinte ao último PIB — base do nowcasting via bridge).
+    """
+    indicators_q = pd.DataFrame(
+        {spec.name: dataset.to_quarterly(raw[spec.name], spec.agg) for spec in config.INDICATORS}
+    ).sort_index()
+    pib_q = dataset.to_quarterly(raw["pib"], config.PIB_TARGET.agg)
+    target_full = dataset.pib_growth(pib_q, kind=target_kind).dropna().rename("pib_growth")
+    return target_full, indicators_q
+
+
+def _model_exog(name: str, model_index: pd.DatetimeIndex, indicators_q: pd.DataFrame):
+    """Monta a matriz exógena apropriada para cada modelo.
+
+    - arima/sarima: dummies de intervenção da COVID;
+    - var: indicadores (tratados como endógenos pelo VAR);
+    - bridge: indicadores contemporâneos + dummies de COVID.
+    """
+    covid = dataset.covid_dummies(model_index)
+    if name in UNIVARIATE:
+        return covid
+    if name == "var":
+        return indicators_q.reindex(model_index)
+    if name == "bridge":
+        ind = indicators_q.reindex(model_index)
+        return pd.concat([ind, covid], axis=1)
+    return None
+
+
 def nowcast(
     raw: dict[str, pd.Series],
     model_name: str = "arima",
     target_kind: str = "qoq",
-    as_of: pd.Timestamp | None = None,
-    respect_publication_lag: bool = True,
 ) -> dict:
-    """Gera o nowcast do próximo trimestre do PIB.
-
-    Respeita por padrão as defasagens de publicação (cenário realista).
-    """
-    df = current_dataset(
-        raw,
-        target_kind=target_kind,
-        as_of=as_of,
-        respect_publication_lag=respect_publication_lag,
-    )
-    target = df["pib_growth"].dropna()
-    exog = df[[s.name for s in config.INDICATORS]]
-    exog = exog.loc[: target.index.max()] if not exog.empty else exog
+    """Gera o nowcast do próximo trimestre do PIB."""
+    target_full, indicators_q = _prepare(raw, target_kind)
+    next_q = target_full.index.max() + pd.offsets.QuarterBegin(1, startingMonth=1)
 
     model = MODELS[model_name]()
-    if model_name == "var":
-        model.fit(target, exog)
+    if model_name in UNIVARIATE:
+        exog = dataset.covid_dummies(target_full.index)
+        model.fit(target_full, exog)
+        fut = dataset.covid_dummies(pd.DatetimeIndex([next_q]))
+        fc = model.forecast(steps=1, exog_future=fut)
+    elif model_name == "var":
+        aligned = pd.concat([target_full, indicators_q], axis=1).dropna()
+        model.fit(aligned["pib_growth"], aligned[indicators_q.columns])
+        fc = model.forecast(steps=1)
+    elif model_name == "bridge":
+        idx = pd.DatetimeIndex(list(target_full.index) + [next_q])
+        exog = _model_exog("bridge", idx, indicators_q)
+        train = pd.concat([target_full, exog.loc[target_full.index]], axis=1).dropna()
+        model.fit(train["pib_growth"], train[exog.columns])
+        # indicadores do trimestre a prever (já publicados antes do PIB)
+        fut = exog.loc[[next_q]]
+        if fut.isna().any().any():
+            raise ValueError(
+                f"Indicadores de {next_q.year}Q{next_q.quarter} ainda não disponíveis."
+            )
+        fc = model.forecast(steps=1, exog_future=fut)
     else:
-        model.fit(target)
-    fc = model.forecast(steps=1)
-    next_q = target.index.max() + pd.offsets.QuarterBegin(1, startingMonth=1)
+        raise ValueError(f"Modelo desconhecido: {model_name}")
+
     return {
         "model": model.summary(),
-        "last_observed_quarter": target.index.max(),
-        "last_observed_value": float(target.iloc[-1]),
+        "last_observed_quarter": target_full.index.max(),
+        "last_observed_value": float(target_full.iloc[-1]),
         "nowcast_quarter": next_q,
         "nowcast_value": float(fc.iloc[0]),
     }
@@ -71,44 +115,77 @@ def run_backtests(
     target_kind: str = "qoq",
     show_progress: bool = True,
     results_out: dict | None = None,
+    exclude_years: list[int] | None = None,
 ) -> pd.DataFrame:
     """Roda backtest realista vs ingênuo (look-ahead) para os modelos dados.
 
-    Com ``show_progress=True`` (padrão) exibe uma barra de progresso por modelo
-    no stderr durante o backtest realista (etapa mais demorada).
+    Todos os modelos são *avaliados* numa janela de teste comum (definida pela
+    disponibilidade dos indicadores), embora os univariados *treinem* com todo o
+    histórico do PIB. Inclui baselines (random walk e média) e uma coluna de
+    RMSE excluindo os anos de ``exclude_years`` (por padrão 2020, a COVID).
 
-    Se ``results_out`` (dict) for fornecido, é preenchido com os
-    ``BacktestResult`` do regime realista por modelo (mais ``random_walk``),
-    para uso em plotagem.
+    Se ``results_out`` for fornecido, é preenchido com os ``BacktestResult`` do
+    regime realista por modelo (para plotagem).
     """
-    df = current_dataset(raw, target_kind=target_kind)
-    target = df["pib_growth"].dropna()
-    exog = df[[s.name for s in config.INDICATORS]].loc[: target.index.max()]
-    # alinhar exog ao target
-    aligned = pd.concat([target, exog], axis=1).dropna()
-    target = aligned["pib_growth"]
-    exog = aligned[[s.name for s in config.INDICATORS]]
+    if exclude_years is None:
+        exclude_years = [2020]
 
-    rows = []
-    # baseline
-    base = bt.random_walk_baseline(target)
-    rows.append({"model": "random_walk", "regime": "realista", **base.metrics})
-    if results_out is not None:
-        results_out["random_walk"] = base
+    target_full, indicators_q = _prepare(raw, target_kind)
+    aligned = pd.concat([target_full, indicators_q], axis=1).dropna()
+    target_var = aligned["pib_growth"]
+
+    # janela de teste comum: 1º trimestre que o VAR/bridge consegue avaliar
+    mt = config.MIN_TRAIN_QUARTERS
+    if len(target_var) <= mt:
+        raise ValueError("Histórico insuficiente para o backtest.")
+    score_start = target_var.index[mt]
+
+    def add_row(model, res):
+        rows.append(
+            {
+                "model": model,
+                "regime": "realista",
+                **res.metrics,
+                "rmse_ex_covid": bt.rmse_excluding_years(res, exclude_years),
+            }
+        )
+        if results_out is not None:
+            results_out[model] = res
+
+    rows: list[dict] = []
+    # baselines (na mesma janela de avaliação)
+    add_row("random_walk", bt.random_walk_baseline(target_full, score_start=score_start))
+    add_row("media", bt.mean_baseline(target_full, score_start=score_start))
 
     for name in model_names:
         def factory(n=name):
             return MODELS[n]()
 
+        univ = name in UNIVARIATE
+        tgt = target_full if univ else target_var
+        exog = _model_exog(name, tgt.index, indicators_q)
+
         label = f"{name} (realista)" if show_progress else None
         real = bt.rolling_backtest(
-            target, exog if name == "var" else None, factory, progress_label=label
+            tgt, exog, factory, progress_label=label, score_start=score_start
         )
-        naive = bt.naive_lookahead_backtest(
-            target, exog if name == "var" else None, factory
+        naive = bt.naive_lookahead_backtest(tgt, exog, factory)
+        rows.append(
+            {
+                "model": name,
+                "regime": "realista",
+                **real.metrics,
+                "rmse_ex_covid": bt.rmse_excluding_years(real, exclude_years),
+            }
         )
-        rows.append({"model": name, "regime": "realista", **real.metrics})
-        rows.append({"model": name, "regime": "look-ahead", **naive.metrics})
+        rows.append(
+            {
+                "model": name,
+                "regime": "look-ahead",
+                **naive.metrics,
+                "rmse_ex_covid": bt.rmse_excluding_years(naive, exclude_years),
+            }
+        )
         if results_out is not None:
             results_out[name] = real
 

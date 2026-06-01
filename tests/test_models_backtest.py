@@ -2,7 +2,8 @@ import numpy as np
 import pandas as pd
 
 from gdp_nowcast import backtest as bt
-from gdp_nowcast.models import ArimaModel, SarimaModel, VarModel
+from gdp_nowcast import dataset
+from gdp_nowcast.models import ArimaModel, BridgeModel, SarimaModel, VarModel
 
 
 def _series(n=60, seed=0):
@@ -47,6 +48,47 @@ def test_var_uses_exog_and_forecasts():
     fc = m.forecast(1)
     assert np.isfinite(fc.iloc[0])
     assert m.selected_lag is not None
+
+
+def test_bridge_uses_contemporaneous_exog():
+    y = _series()
+    rng = np.random.default_rng(3)
+    # indicador fortemente ligado ao alvo contemporâneo
+    exog = pd.DataFrame(
+        {"ibcbr": y.values + rng.normal(scale=0.2, size=len(y))}, index=y.index
+    )
+    m = BridgeModel(use_lagged_target=False).fit(y, exog)
+    # prever usando o indicador contemporâneo do próximo período
+    fut = pd.DataFrame({"ibcbr": [1.0]})
+    fc = m.forecast(1, exog_future=fut)
+    assert np.isfinite(fc.iloc[0])
+
+
+def test_bridge_requires_exog_future():
+    y = _series()
+    exog = pd.DataFrame({"ibcbr": y.values}, index=y.index)
+    m = BridgeModel(use_lagged_target=False).fit(y, exog)
+    try:
+        m.forecast(1, exog_future=None)
+        assert False, "deveria exigir exog_future"
+    except ValueError:
+        pass
+
+
+def test_arima_exog_intervention_runs():
+    y = _series()
+    covid = dataset.covid_dummies(y.index)  # todas zero fora de 2020 -> são dropadas
+    m = ArimaModel(max_p=1, max_d=1, max_q=1).fit(y, covid)
+    fc = m.forecast(1, exog_future=covid.iloc[[0]])
+    assert np.isfinite(fc.iloc[0])
+
+
+def test_covid_dummies_flag_only_2020():
+    idx = pd.date_range("2019-01-01", periods=12, freq="QS")
+    d = dataset.covid_dummies(idx)
+    assert d.loc["2020-04-01", "covid_2020q2"] == 1.0
+    assert d.loc["2019-01-01"].sum() == 0.0
+    assert d.shape[1] == 4
 
 
 def test_metrics_perfect_prediction():

@@ -41,6 +41,27 @@ def pib_growth(pib_index: pd.Series, kind: str = "qoq") -> pd.Series:
     raise ValueError("kind deve ser 'qoq' ou 'yoy'")
 
 
+COVID_QUARTERS = ["2020-01-01", "2020-04-01", "2020-07-01", "2020-10-01"]
+
+
+def covid_dummies(index: pd.DatetimeIndex) -> pd.DataFrame:
+    """Dummies de intervenção (pulso) para os trimestres do choque da COVID.
+
+    O crescimento trimestral do PIB teve outliers extremos em 2020 (queda de
+    ~-9% e rebote de ~+8%). Tratá-los como pulsos exógenos evita que esses
+    pontos contaminem a estimação dos parâmetros nos demais trimestres
+    (quebra estrutural). Cada coluna é 1 no trimestre correspondente, 0 caso
+    contrário; nos períodos futuros (previsão) valem 0.
+    """
+    idx = pd.DatetimeIndex(index)
+    data = {}
+    for q in COVID_QUARTERS:
+        ts = pd.Timestamp(q)
+        col = f"covid_{ts.year}q{ts.quarter}"
+        data[col] = (idx == ts).astype(float)
+    return pd.DataFrame(data, index=idx)
+
+
 def _period_end(quarter_start: pd.Timestamp) -> pd.Timestamp:
     """Último dia do trimestre cujo início é ``quarter_start``."""
     return quarter_start + pd.offsets.QuarterEnd(0)

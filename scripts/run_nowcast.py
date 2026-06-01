@@ -69,8 +69,9 @@ def main() -> int:
         )
         print("\nResultados:")
         with_fmt = table.copy()
-        for col in ("rmse", "mae", "mape", "bias"):
-            with_fmt[col] = with_fmt[col].map(lambda v: f"{v:.3f}")
+        for col in ("rmse", "rmse_ex_covid", "mae", "mape", "bias"):
+            if col in with_fmt:
+                with_fmt[col] = with_fmt[col].map(lambda v: f"{v:.3f}")
         print(with_fmt.to_string(index=False))
         print(
             "\nNota: o regime 'look-ahead' usa informação futura no ajuste e tende a "

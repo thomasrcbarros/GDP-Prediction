@@ -92,25 +92,41 @@ def rolling_backtest(
     model_factory,
     min_train: int = config.MIN_TRAIN_QUARTERS,
     progress_label: str | None = None,
+    score_start: pd.Timestamp | None = None,
 ) -> BacktestResult:
     """Backtest realista one-step-ahead com janela expansível.
 
     Se ``progress_label`` for fornecido, desenha uma barra de progresso no
     stderr conforme as janelas são processadas.
+
+    ``score_start`` (opcional) define a partir de qual data as previsões entram
+    na avaliação. O treino continua usando todo o histórico disponível — isso
+    permite que modelos univariados treinem com a série completa do PIB e ainda
+    assim sejam comparados a outros modelos numa janela de teste comum.
     """
     target = target.dropna()
+    if exog is not None:
+        exog = exog.reindex(target.index)
     idx = target.index
     preds, actuals, dates = [], [], []
 
-    total = len(target) - min_train
+    steps_idx = [
+        i
+        for i in range(min_train, len(target))
+        if score_start is None or idx[i] >= score_start
+    ]
+    total = len(steps_idx)
     t0 = time.time()
-    for step, i in enumerate(range(min_train, len(target)), start=1):
+    for step, i in enumerate(steps_idx, start=1):
         train_y = target.iloc[:i]
         train_x = exog.iloc[:i] if exog is not None else None
+        # exógenas do trimestre previsto: dummies de COVID (conhecidas) e/ou
+        # indicadores contemporâneos já publicados (caso da bridge equation).
+        fut_x = exog.iloc[[i]] if exog is not None else None
         try:
             model = model_factory()
             model.fit(train_y, train_x)
-            yhat = float(model.forecast(steps=1).iloc[0])
+            yhat = float(model.forecast(steps=1, exog_future=fut_x).iloc[0])
         except Exception:  # noqa: BLE001 - modelo pode não convergir em alguma janela
             if progress_label is not None:
                 render_progress(progress_label, step, total, t0)
@@ -170,16 +186,54 @@ def naive_lookahead_backtest(
     )
 
 
+def _slice_score(series: pd.Series, min_train: int, score_start):
+    out = series.iloc[min_train:]
+    if score_start is not None:
+        out = out[out.index >= score_start]
+    return out
+
+
 def random_walk_baseline(
-    target: pd.Series, min_train: int = config.MIN_TRAIN_QUARTERS
+    target: pd.Series,
+    min_train: int = config.MIN_TRAIN_QUARTERS,
+    score_start: pd.Timestamp | None = None,
 ) -> BacktestResult:
     """Baseline: previsão = último valor observado (random walk)."""
     target = target.dropna()
-    preds = target.shift(1).iloc[min_train:]
-    actuals = target.iloc[min_train:]
+    preds = _slice_score(target.shift(1), min_train, score_start)
+    actuals = _slice_score(target, min_train, score_start)
     return BacktestResult(
         model_name="random_walk",
         predictions=preds,
         actuals=actuals,
         metrics=compute_metrics(actuals.values, preds.values),
     )
+
+
+def mean_baseline(
+    target: pd.Series,
+    min_train: int = config.MIN_TRAIN_QUARTERS,
+    score_start: pd.Timestamp | None = None,
+) -> BacktestResult:
+    """Baseline: previsão = média histórica (expansível) até o período anterior.
+
+    Para o crescimento trimestral do PIB (mean-reverting) costuma ser um
+    baseline mais forte que o random walk.
+    """
+    target = target.dropna()
+    preds = _slice_score(target.expanding().mean().shift(1), min_train, score_start)
+    actuals = _slice_score(target, min_train, score_start)
+    return BacktestResult(
+        model_name="media",
+        predictions=preds,
+        actuals=actuals,
+        metrics=compute_metrics(actuals.values, preds.values),
+    )
+
+
+def rmse_excluding_years(result: BacktestResult, years: list[int]) -> float:
+    """RMSE recomputado descartando trimestres dos anos indicados (ex.: COVID)."""
+    mask = ~result.actuals.index.year.isin(years)
+    if not mask.any():
+        return float("nan")
+    return rmse(result.actuals[mask].values, result.predictions[mask].values)

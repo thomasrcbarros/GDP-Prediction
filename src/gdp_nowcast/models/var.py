@@ -55,7 +55,8 @@ class VarModel(NowcastModel):
         self._last_obs = tdf.values[-self._result.k_ar :]
         return self
 
-    def forecast(self, steps: int = 1) -> pd.Series:
+    def forecast(self, steps: int = 1, exog_future: pd.DataFrame | None = None) -> pd.Series:
+        # exog_future é ignorado: o VAR prevê os próprios indicadores (endógenos).
         if self._result is None:
             raise RuntimeError("Modelo não treinado.")
         lag = max(self._result.k_ar, 1)
