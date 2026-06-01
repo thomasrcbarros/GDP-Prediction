@@ -29,8 +29,9 @@ class SeriesSpec:
 
     Attributes:
         name: identificador curto (nome de coluna / arquivo de cache).
-        source: "bcb" ou "ibge".
-        code: SGS (bcb) ou "agregado:variavel[:classificacao]" (ibge).
+        source: "bcb", "ibge" ou "yahoo".
+        code: SGS (bcb), "agregado:variavel[:classificacao]" (ibge) ou símbolo
+            do Yahoo Finance (yahoo, ex.: "^BVSP").
         freq: "M" (mensal) ou "Q" (trimestral).
         agg: agregação mensal->trimestral ("mean", "sum", "last").
         transform: como vira feature trimestral:
@@ -74,11 +75,12 @@ SERIES: dict[str, SeriesSpec] = {
     "ipca": SeriesSpec("ipca", "bcb", "433", "M", "sum", "rate", 10),     # IPCA var% mensal
     "cambio": SeriesSpec("cambio", "bcb", "3698", "M", "mean", "growth", 1),  # R$/US$ venda média
     # Bloco mercado/expectativas (variante E do VARX)
-    #   ibovespa -> Ibovespa, fechamento mensal (SGS 7).
+    #   ibovespa -> Ibovespa, fechamento mensal (Yahoo Finance ^BVSP; o BCB
+    #               descontinuou a série no SGS).
     #   confcons -> Índice de Confiança do Consumidor (SGS 4393), mensal.
     #   confserv -> Sondagem de Serviços – Índice de Confiança dessaz (SGS 20339),
     #               mensal, série inicia em 2008-06.
-    "ibovespa": SeriesSpec("ibovespa", "bcb", "7", "M", "last", "growth", 1),
+    "ibovespa": SeriesSpec("ibovespa", "yahoo", "^BVSP", "M", "last", "growth", 1),
     "confcons": SeriesSpec("confcons", "bcb", "4393", "M", "mean", "level", 5),
     "confserv": SeriesSpec("confserv", "bcb", "20339", "M", "mean", "level", 10),
 }

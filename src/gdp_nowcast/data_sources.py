@@ -15,12 +15,12 @@ import requests
 import config
 
 
-def _request_json(url: str, retries: int = 4, timeout: int = 30):
+def _request_json(url: str, retries: int = 4, timeout: int = 30, headers: dict | None = None):
     """GET com retry e backoff exponencial. Retorna JSON decodificado."""
     last_exc: Exception | None = None
     for attempt in range(retries):
         try:
-            resp = requests.get(url, timeout=timeout)
+            resp = requests.get(url, timeout=timeout, headers=headers)
             resp.raise_for_status()
             return resp.json()
         except (requests.RequestException, ValueError) as exc:  # noqa: PERF203
@@ -59,6 +59,31 @@ def fetch_bcb_series(code: str, start: str | None = None) -> pd.Series:
     if start is not None:
         s = s[s.index >= pd.to_datetime(start)]
     s.name = code
+    return s
+
+
+YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
+
+
+def fetch_yahoo_series(symbol: str, start: str | None = None) -> pd.Series:
+    """Busca o fechamento mensal de um símbolo no Yahoo Finance (ex.: ``^BVSP``).
+
+    O BCB descontinuou a série do Ibovespa no SGS, então usamos o Yahoo como
+    fonte. Retorna ``pd.Series`` mensal (índice no início do mês) de fechamentos.
+    """
+    p1 = int(pd.to_datetime(start).timestamp()) if start else 0
+    p2 = int(pd.Timestamp.today().timestamp())
+    url = f"{YAHOO_CHART_URL.format(symbol=symbol)}?period1={p1}&period2={p2}&interval=1mo"
+    data = _request_json(url, headers={"User-Agent": "Mozilla/5.0"})
+    result = (data.get("chart", {}).get("result") or [None])[0]
+    if not result:
+        return pd.Series(dtype="float64")
+    ts = result["timestamp"]
+    closes = result["indicators"]["quote"][0]["close"]
+    idx = pd.to_datetime(ts, unit="s").normalize().to_period("M").to_timestamp()
+    s = pd.Series(closes, index=idx).dropna()
+    s = s[~s.index.duplicated(keep="last")].sort_index()
+    s.name = symbol
     return s
 
 
@@ -123,6 +148,8 @@ def load_series(spec: config.SeriesSpec, refresh: bool = False) -> pd.Series:
         aggregate, variable = parts[0], parts[1]
         classific = parts[2] if len(parts) > 2 else ""
         s = fetch_ibge_aggregate(aggregate, variable, classific=classific)
+    elif spec.source == "yahoo":
+        s = fetch_yahoo_series(spec.code, start=config.DEFAULT_START)
     else:
         raise ValueError(f"Fonte desconhecida: {spec.source}")
 

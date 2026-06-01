@@ -70,12 +70,13 @@ ex.: `20` ≈ 5 anos) em vez da amostra completa.
 | PMC volume varejo (dessaz) | IBGE SIDRA | 8880 / 7170 | ~45 d | var % T/T |
 | IPCA (variação mensal) | BCB SGS | 433 | ~10 d | soma trimestral |
 | Câmbio R$/US$ (venda, média) | BCB SGS | 3698 | ~1 d | var % T/T |
-| Ibovespa — fechamento mensal | BCB SGS | 7 | ~1 d | var % T/T |
+| Ibovespa — fechamento mensal | Yahoo Finance | ^BVSP | ~1 d | var % T/T |
 | Confiança do Consumidor | BCB SGS | 4393 | ~5 d | média trimestral (nível) |
 | Confiança de Serviços (dessaz) | BCB SGS | 20339 | ~10 d | média trimestral (nível) |
 
-> Os códigos do bloco E (Ibovespa = 7, Consumidor = 4393, Serviços dessaz = 20339) são do
-> SGS/BCB; confirme nomes/valores no teste local com `python scripts/fetch_data.py --refresh`.
+> O Ibovespa vem do **Yahoo Finance** (`^BVSP`, fechamento mensal) porque o BCB
+> descontinuou a série no SGS. Confiança (Consumidor = 4393, Serviços dessaz = 20339) são
+> do SGS/BCB; confirme nomes/valores no teste local com `python scripts/fetch_data.py --refresh`.
 
 As defasagens de publicação (`config.py`) são o núcleo da avaliação de *look-ahead bias*:
 permitem simular exatamente quais dados estariam disponíveis numa dada data de referência.
