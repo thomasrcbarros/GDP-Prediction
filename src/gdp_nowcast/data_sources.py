@@ -45,7 +45,12 @@ def fetch_bcb_series(code: str, start: str | None = None) -> pd.Series:
     while win_start <= fim:
         win_end = min(win_start + pd.DateOffset(years=10) - pd.Timedelta(days=1), fim)
         url = f"{base}&dataInicial={win_start:%d/%m/%Y}&dataFinal={win_end:%d/%m/%Y}"
-        part = _request_json(url)
+        # O SGS devolve 404 para janelas anteriores ao início da série (sem dados);
+        # tratamos como janela vazia e seguimos para a próxima.
+        try:
+            part = _request_json(url)
+        except RuntimeError:
+            part = None
         if part:
             chunks.extend(part)
         win_start = win_end + pd.Timedelta(days=1)
