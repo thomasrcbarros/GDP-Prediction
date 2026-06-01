@@ -21,6 +21,12 @@ _COLORS = {
 }
 
 
+def _color(label: str) -> str:
+    """Cor pela base do rótulo (ex.: 'bridge[B]' -> cor de 'bridge')."""
+    base = label.split("[")[0]
+    return _COLORS.get(base, "#777777")
+
+
 def plot_comparison(
     results: dict,
     metrics_table: pd.DataFrame,
@@ -62,7 +68,7 @@ def plot_comparison(
             res.predictions.values,
             lw=1.4,
             alpha=0.9,
-            color=_COLORS.get(name),
+            color=_color(name),
             label=name,
         )
     ax1.set_title(f"Backtest one-step-ahead (crescimento {target_kind})")
@@ -77,7 +83,7 @@ def plot_comparison(
     ax2.bar(
         real["model"],
         real["rmse"],
-        color=[_COLORS.get(m, "#777") for m in real["model"]],
+        color=[_color(m) for m in real["model"]],
     )
     ax2.set_title("RMSE no backtest (menor = melhor)")
     ax2.set_ylabel("RMSE")
@@ -89,7 +95,7 @@ def plot_comparison(
         ax3 = fig.add_subplot(1, ncols, 3)
         names = list(nowcasts.keys())
         vals = [nowcasts[n] for n in names]
-        bars = ax3.bar(names, vals, color=[_COLORS.get(n, "#777") for n in names])
+        bars = ax3.bar(names, vals, color=[_color(n) for n in names])
         ax3.set_title("Nowcast do próximo trimestre")
         ax3.set_ylabel("Crescimento previsto (%)")
         ax3.axhline(0, color="grey", lw=0.6, ls="--")

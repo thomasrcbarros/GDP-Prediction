@@ -18,6 +18,22 @@ def test_to_quarterly_mean_aligns_to_quarter_start():
     assert q.iloc[1] == np.mean([13, 14, 15])
 
 
+def test_transform_indicator_growth_and_rate():
+    s = _monthly("2020-01-01", 6, step=0.0, base=100.0)  # nível constante
+    spec_g = config.SeriesSpec("x", "bcb", "0", "M", "mean", "growth")
+    g = dataset.transform_indicator(s, spec_g)
+    assert (g.abs() < 1e-9).all()  # nível constante -> variação 0
+    spec_r = config.SeriesSpec("y", "bcb", "0", "M", "sum", "rate")
+    r = dataset.transform_indicator(_monthly("2020-01-01", 3, step=0, base=1.0), spec_r)
+    assert abs(r.iloc[0] - 3.0) < 1e-9  # soma trimestral de 1+1+1
+
+
+def test_feature_sets_reference_known_series():
+    for name, cols in config.FEATURE_SETS.items():
+        for c in cols:
+            assert c in config.SERIES, f"{c} do conjunto {name} não está em SERIES"
+
+
 def test_pib_growth_qoq():
     idx = pd.date_range("2020-01-01", periods=3, freq="QS")
     pib = pd.Series([100.0, 102.0, 102.0], index=idx)

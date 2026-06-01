@@ -27,6 +27,22 @@ def to_quarterly(series: pd.Series, agg: str) -> pd.Series:
     return resampled.dropna()
 
 
+def transform_indicator(series: pd.Series, spec) -> pd.Series:
+    """Converte um indicador mensal/trimestral na feature trimestral do modelo.
+
+    Segue ``spec.transform``:
+      - "growth": variação % T/T do nível dessaz (mesma escala do alvo);
+      - "rate":   soma trimestral (séries já em variação %, ex.: IPCA);
+      - "level":  nível trimestral bruto.
+    """
+    q = to_quarterly(series, spec.agg)
+    if spec.transform == "growth":
+        return (q.pct_change(1) * 100).dropna()
+    if spec.transform == "rate":
+        return q.dropna()  # to_quarterly já somou os meses (agg="sum")
+    return q.dropna()
+
+
 def pib_growth(pib_index: pd.Series, kind: str = "qoq") -> pd.Series:
     """Calcula o crescimento do PIB a partir do índice trimestral.
 

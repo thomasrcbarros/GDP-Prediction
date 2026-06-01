@@ -50,15 +50,16 @@ def fetch_bcb_series(code: str, start: str | None = None) -> pd.Series:
 
 
 def fetch_ibge_aggregate(
-    aggregate: str, variable: str, periods: str = "all"
+    aggregate: str, variable: str, periods: str = "all", classific: str = ""
 ) -> pd.Series:
     """Busca uma variável de um agregado do IBGE (API SIDRA v3).
 
-    Retorna a série nacional (N1). Períodos no formato IBGE (ex.: ``202301``
-    para trimestre, ``202301`` para mês) são convertidos em datas.
+    Retorna a série nacional (N1). ``classific`` é o filtro de classificação no
+    formato da API (ex.: ``11046[56726]|12355[107071]``); vazio para nenhum.
     """
+    cl = f"&classificacao={classific}" if classific else ""
     url = config.IBGE_AGGREGATE_URL.format(
-        aggregate=aggregate, periods=periods, variable=variable
+        aggregate=aggregate, periods=periods, variable=variable, classific=cl
     )
     data = _request_json(url)
     if not data:
@@ -66,7 +67,10 @@ def fetch_ibge_aggregate(
     serie_dict = data[0]["resultados"][0]["series"][0]["serie"]
     records = {}
     for period, value in serie_dict.items():
-        records[_parse_ibge_period(period)] = pd.to_numeric(value, errors="coerce")
+        try:
+            records[_parse_ibge_period(period)] = float(value)
+        except (TypeError, ValueError):
+            continue  # "..." / "-" => indisponível
     s = pd.Series(records).sort_index()
     s.name = f"ibge_{aggregate}_{variable}"
     return s
@@ -102,8 +106,10 @@ def load_series(spec: config.SeriesSpec, refresh: bool = False) -> pd.Series:
     if spec.source == "bcb":
         s = fetch_bcb_series(spec.code, start=config.DEFAULT_START)
     elif spec.source == "ibge":
-        aggregate, variable = spec.code.split(":")
-        s = fetch_ibge_aggregate(aggregate, variable)
+        parts = spec.code.split(":")
+        aggregate, variable = parts[0], parts[1]
+        classific = parts[2] if len(parts) > 2 else ""
+        s = fetch_ibge_aggregate(aggregate, variable, classific=classific)
     else:
         raise ValueError(f"Fonte desconhecida: {spec.source}")
 

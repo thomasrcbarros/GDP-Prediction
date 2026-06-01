@@ -1,14 +1,14 @@
 """Configuração central do projeto de nowcasting do PIB.
 
-Define os códigos das séries (BCB SGS / IBGE), suas frequências, o tipo de
-agregação mensal->trimestral e as defasagens de publicação usadas para simular
-o que estava disponível numa data de referência (núcleo da avaliação de
-look-ahead bias).
+Define os códigos das séries (BCB SGS / IBGE), a agregação mensal->trimestral, a
+transformação usada como feature, as defasagens de publicação (núcleo da
+avaliação de look-ahead bias) e os **conjuntos de variáveis** (A/B/C/D) testados
+nos modelos multivariados.
 """
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 # Diretórios -----------------------------------------------------------------
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -16,9 +16,10 @@ DATA_DIR = os.path.join(ROOT_DIR, "data")
 
 # Endpoints ------------------------------------------------------------------
 BCB_SGS_URL = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.{code}/dados?formato=json"
+# Para o IBGE o "code" carrega: "agregado:variavel[:classificacao]"
 IBGE_AGGREGATE_URL = (
     "https://servicodados.ibge.gov.br/api/v3/agregados/{aggregate}/periodos/"
-    "{periods}/variaveis/{variable}?localidades=N1[all]"
+    "{periods}/variaveis/{variable}?localidades=N1[all]{classific}"
 )
 
 
@@ -27,13 +28,16 @@ class SeriesSpec:
     """Especificação de uma série temporal.
 
     Attributes:
-        name: identificador curto usado como nome de coluna / arquivo de cache.
+        name: identificador curto (nome de coluna / arquivo de cache).
         source: "bcb" ou "ibge".
-        code: código SGS (para BCB).
+        code: SGS (bcb) ou "agregado:variavel[:classificacao]" (ibge).
         freq: "M" (mensal) ou "Q" (trimestral).
-        agg: como agregar mensal->trimestral ("mean", "sum", "last").
-        publication_lag_days: dias após o fim do período de referência até a
-            publicação do dado (usado para simular disponibilidade real).
+        agg: agregação mensal->trimestral ("mean", "sum", "last").
+        transform: como vira feature trimestral:
+            "growth" = variação % T/T do nível dessaz (QoQ);
+            "rate"   = soma trimestral (p/ séries já em variação %, ex.: IPCA);
+            "level"  = nível bruto.
+        publication_lag_days: dias após o fim do período até a publicação.
         is_target: True para a série-alvo (PIB).
     """
 
@@ -42,52 +46,62 @@ class SeriesSpec:
     code: str
     freq: str
     agg: str = "mean"
+    transform: str = "growth"
     publication_lag_days: int = 30
     is_target: bool = False
 
 
-# Séries-alvo e indicadores antecedentes -------------------------------------
-# Códigos validados contra a API do BCB (SGS).
+# Série-alvo -----------------------------------------------------------------
 PIB_TARGET = SeriesSpec(
     name="pib",
     source="bcb",
     code="22109",  # PIB - índice encadeado dessazonalizado (média 1995=100), trimestral
     freq="Q",
     agg="last",
-    publication_lag_days=60,  # PIB trimestral sai ~60 dias após o fim do trimestre
+    transform="growth",
+    publication_lag_days=60,
     is_target=True,
 )
 
-INDICATORS = [
-    SeriesSpec(
-        name="ibcbr",
-        source="bcb",
-        code="24364",  # IBC-Br dessazonalizado (proxy mensal do PIB)
-        freq="M",
-        agg="mean",
-        publication_lag_days=45,
-    ),
-    SeriesSpec(
-        name="pim",
-        source="bcb",
-        code="21859",  # Produção industrial - indústria geral (PIM-PF), índice
-        freq="M",
-        agg="mean",
-        publication_lag_days=35,
-    ),
-    SeriesSpec(
-        name="desocupacao",
-        source="bcb",
-        code="24369",  # Taxa de desocupação - PNAD Contínua (%)
-        freq="M",
-        agg="mean",
-        publication_lag_days=30,
-    ),
-]
+# Registro de indicadores (todos dessazonalizados / consistentes com o alvo) --
+SERIES: dict[str, SeriesSpec] = {
+    "ibcbr": SeriesSpec("ibcbr", "bcb", "24364", "M", "mean", "growth", 45),
+    "pim": SeriesSpec("pim", "bcb", "21859", "M", "mean", "growth", 35),
+    # PMS/PMC: número-índice de volume COM ajuste sazonal (IBGE SIDRA)
+    "pms": SeriesSpec("pms", "ibge", "8688:7168:11046[56726]|12355[107071]", "M", "mean", "growth", 45),
+    "pmc": SeriesSpec("pmc", "ibge", "8880:7170:11046[56734]", "M", "mean", "growth", 45),
+    # Bloco macro (variante D do VAR)
+    "ipca": SeriesSpec("ipca", "bcb", "433", "M", "sum", "rate", 10),     # IPCA var% mensal
+    "cambio": SeriesSpec("cambio", "bcb", "3698", "M", "mean", "growth", 1),  # R$/US$ venda média
+}
 
+INDICATORS = list(SERIES.values())
 ALL_SERIES = [PIB_TARGET] + INDICATORS
 
+# Conjuntos de variáveis testados nos modelos multivariados ------------------
+FEATURE_SETS: dict[str, list[str]] = {
+    "A": ["ibcbr"],                          # parcimonioso
+    "B": ["pim", "pms", "pmc"],              # setorial (principal)
+    "C": ["ibcbr", "pim", "pms", "pmc"],    # tudo
+    "D": ["ibcbr", "ipca", "cambio"],       # bloco macro (apenas VAR)
+}
+PRINCIPAL_SET = "B"
+
+# Combinações (modelo, conjunto) avaliadas no backtest comparativo.
+# ARIMA/SARIMA são univariados (sem conjunto).
+MODEL_VARIANTS: list[tuple[str, str | None]] = [
+    ("arima", None),
+    ("sarima", None),
+    ("bridge", "A"),
+    ("bridge", "B"),
+    ("bridge", "C"),
+    ("var", "A"),
+    ("var", "B"),
+    ("var", "C"),
+    ("var", "D"),
+]
+
 # Parâmetros de modelagem / backtest -----------------------------------------
-SEASONAL_PERIOD = 4  # trimestres por ano
-MIN_TRAIN_QUARTERS = 20  # tamanho mínimo da janela inicial de treino no backtest
-DEFAULT_START = "2003-01-01"  # início da coleta (PNAD/IBC-Br começam ~2002-2003)
+SEASONAL_PERIOD = 4
+MIN_TRAIN_QUARTERS = 20
+DEFAULT_START = "2000-01-01"
