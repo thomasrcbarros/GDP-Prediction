@@ -73,13 +73,12 @@ SERIES: dict[str, SeriesSpec] = {
     # Bloco macro (variante D do VAR/VARX)
     "ipca": SeriesSpec("ipca", "bcb", "433", "M", "sum", "rate", 10),     # IPCA var% mensal
     "cambio": SeriesSpec("cambio", "bcb", "3698", "M", "mean", "growth", 1),  # R$/US$ venda média
-    # Bloco mercado de trabalho + expectativas (variante E do VARX)
-    # ATENÇÃO: confirmar o código do CAGED no teste local (ver PR).
-    #   caged    -> CAGED saldo de empregos formais (28763 = total mensal).
+    # Bloco mercado/expectativas (variante E do VARX)
+    #   ibovespa -> Ibovespa, fechamento mensal (SGS 7).
     #   confcons -> Índice de Confiança do Consumidor (SGS 4393), mensal.
     #   confserv -> Sondagem de Serviços – Índice de Confiança dessaz (SGS 20339),
     #               mensal, série inicia em 2008-06.
-    "caged": SeriesSpec("caged", "bcb", "28763", "M", "sum", "level", 30),
+    "ibovespa": SeriesSpec("ibovespa", "bcb", "7", "M", "last", "growth", 1),
     "confcons": SeriesSpec("confcons", "bcb", "4393", "M", "mean", "level", 5),
     "confserv": SeriesSpec("confserv", "bcb", "20339", "M", "mean", "level", 10),
 }
@@ -93,8 +92,8 @@ FEATURE_SETS: dict[str, list[str]] = {
     "B": ["pim", "pms", "pmc"],              # setorial (oferta)
     "C": ["ibcbr", "pim", "pms", "pmc"],    # tudo
     "D": ["ibcbr", "ipca", "cambio"],       # bloco macro
-    # E: mercado de trabalho + expectativas; SEM IBC-Br (requisito do usuário).
-    "E": ["pim", "pms", "pmc", "caged", "confcons", "confserv"],
+    # E: mercado/expectativas; SEM IBC-Br (requisito do usuário).
+    "E": ["pim", "pms", "pmc", "ibovespa", "confcons", "confserv"],
 }
 PRINCIPAL_SET = "A"
 
@@ -115,7 +114,7 @@ MODEL_VARIANTS: list[tuple[str, str | None]] = [
     ("varx", "B"),
     ("varx", "C"),
     ("varx", "D"),
-    ("varx", "E"),     # CAGED + confiança (consumidor+serviços) + setorial, dummy COVID
+    ("varx", "E"),     # Ibovespa + confiança (consumidor+serviços) + setorial, dummy COVID
 ]
 
 # Parâmetros de modelagem / backtest -----------------------------------------
