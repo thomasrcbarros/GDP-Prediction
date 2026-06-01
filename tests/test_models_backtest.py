@@ -3,7 +3,7 @@ import pandas as pd
 
 from gdp_nowcast import backtest as bt
 from gdp_nowcast import dataset
-from gdp_nowcast.models import ArimaModel, BridgeModel, SarimaModel, VarModel
+from gdp_nowcast.models import ArimaModel, BridgeModel, SarimaModel, VarModel, VarxModel
 
 
 def _series(n=60, seed=0):
@@ -48,6 +48,26 @@ def test_var_uses_exog_and_forecasts():
     fc = m.forecast(1)
     assert np.isfinite(fc.iloc[0])
     assert m.selected_lag is not None
+
+
+def test_varx_conditions_on_contemporaneous_indicators():
+    y = _series()
+    rng = np.random.default_rng(9)
+    n = len(y)
+    exog = pd.DataFrame(
+        {
+            "ibcbr": 0.7 * y.values + rng.normal(scale=0.3, size=n),
+            "pim": 0.4 * y.values + rng.normal(scale=0.5, size=n),
+        },
+        index=y.index,
+    )
+    m = VarxModel(maxlags=3).fit(y, exog)
+    # condicionar deve diferir da previsão incondicional
+    fut = pd.DataFrame({"ibcbr": [2.0], "pim": [1.5]})
+    cond = m.forecast(1, exog_future=fut).iloc[0]
+    uncond = m.forecast(1, exog_future=None).iloc[0]
+    assert np.isfinite(cond) and np.isfinite(uncond)
+    assert abs(cond - uncond) > 1e-9
 
 
 def test_bridge_uses_contemporaneous_exog():

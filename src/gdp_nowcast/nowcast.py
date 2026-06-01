@@ -67,11 +67,16 @@ def nowcast(raw, model_name="arima", feature_set=None, target_kind="qoq") -> dic
         exog = dataset.covid_dummies(target_full.index)
         model.fit(target_full, exog)
         fc = model.forecast(1, exog_future=dataset.covid_dummies(pd.DatetimeIndex([next_q])))
-    elif model_name == "var":
+    elif model_name in ("var", "varx"):
         cols = config.FEATURE_SETS[feature_set]
         aligned = pd.concat([target_full, feats[cols]], axis=1).dropna()
         model.fit(aligned["pib_growth"], aligned[cols])
-        fc = model.forecast(1)
+        # VARX condiciona nos indicadores contemporâneos já publicados do
+        # trimestre a prever; VAR ignora exog_future.
+        fut = feats[cols].reindex([next_q]) if model_name == "varx" else None
+        if model_name == "varx" and fut.isna().any().any():
+            raise ValueError(f"Indicadores de {next_q.year}Q{next_q.quarter} indisponíveis.")
+        fc = model.forecast(1, exog_future=fut)
     elif model_name == "bridge":
         idx = pd.DatetimeIndex(list(target_full.index) + [next_q])
         exog = _exog_for("bridge", feature_set, idx, feats)

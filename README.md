@@ -5,17 +5,30 @@ fim do trimestre. Este projeto estima o crescimento econômico **em tempo real**
 (*nowcasting*) usando indicadores mensais antecedentes — abordagem usada por bancos
 centrais e instituições financeiras — antes da divulgação oficial.
 
-Implementa **ARIMA**, **SARIMA**, **VAR** e uma **bridge equation** com *backtesting*
-rolling e avaliação explícita de **look-ahead bias** (respeitando o calendário real de
-publicação de cada série). Dados públicos do **BCB (SGS)** e **IBGE**.
+Implementa **ARIMA**, **SARIMA**, **VAR**, **VARX** (VAR condicional) e uma **bridge
+equation** com *backtesting* rolling e avaliação explícita de **look-ahead bias**
+(respeitando o calendário real de publicação de cada série). Dados públicos do **BCB
+(SGS)** e **IBGE**.
 
-### Modelos e por que a bridge equation importa
+### Modelos
 
-ARIMA/SARIMA são univariados (extrapolam o passado do PIB) e o VAR prevê os próprios
-indicadores — nenhum deles explora a real vantagem do nowcasting: os indicadores mensais
-do trimestre corrente (IBC-Br, produção industrial) que **já foram publicados** quando o
-PIB ainda não saiu. A **bridge equation** regride o PIB sobre esses indicadores
-contemporâneos e, por isso, é a que de fato supera os baselines.
+| Modelo | Tipo | Como usa os indicadores |
+|--------|------|--------------------------|
+| ARIMA / SARIMA | univariado | só o passado do PIB (+ dummies de COVID) |
+| VAR | multivariado | sistema conjunto; **prevê** os indicadores |
+| VARX | multivariado | VAR conjunto, mas **condiciona** o PIB nos indicadores contemporâneos já publicados |
+| bridge | regressão | regride o PIB nos indicadores contemporâneos já publicados |
+
+ARIMA/SARIMA apenas extrapolam o passado do PIB. O VAR prevê os próprios indicadores —
+desperdiçando a vantagem do nowcasting. **VARX** e **bridge** exploram a real vantagem: os
+indicadores mensais do trimestre corrente (IBC-Br, PIM, PMS, PMC) que **já foram
+publicados** quando o PIB ainda não saiu.
+
+### Baseline: IBC-Br (prévia oficial do PIB)
+
+O **IBC-Br** é o índice de atividade econômica do Banco Central — a *prévia oficial* do
+PIB. Por isso a **bridge sobre o IBC-Br (conjunto A)** é adotada como **baseline do
+projeto**: é o número que qualquer modelo mais elaborado precisa superar para se justificar.
 
 ### Conjuntos de variáveis (A/B/C/D)
 
@@ -24,29 +37,35 @@ entram como **variação % T/T dessazonalizada**, mesma escala do alvo):
 
 | Conjunto | Variáveis | Uso |
 |----------|-----------|-----|
-| **A** | IBC-Br | bridge, VAR |
-| **B** | PIM + PMS + PMC (indústria, serviços, comércio) | bridge, VAR |
-| **C** | IBC-Br + PIM + PMS + PMC | bridge, VAR |
-| **D** | IBC-Br + IPCA + câmbio (bloco macro) | VAR |
+| **A** | IBC-Br | baseline (bridge) |
+| **B** | PIM + PMS + PMC (indústria, serviços, comércio) | bridge, VAR, VARX |
+| **C** | IBC-Br + PIM + PMS + PMC | bridge, VAR, VARX |
+| **D** | IBC-Br + IPCA + câmbio (bloco macro) | VARX |
 
-No backtest (janela de teste comum, treino com histórico completo do PIB), o RMSE fica:
+No backtest (janela de teste comum, treino com histórico completo do PIB), o RMSE fica
+(números variam um pouco a cada coleta de dados):
 
 | Variante | RMSE | RMSE sem 2020 |
 |----------|------|----------------|
-| random walk (baseline) | 3.14 | 0.96 |
-| média histórica (baseline) | 2.12 | 0.57 |
-| **bridge[A] — IBC-Br** | **0.45** | **0.44** |
-| bridge[C] — todos | 0.74 | 0.59 |
-| bridge[B] — setorial | 1.56 | 0.90 |
-| var[A] / var[D] | ~2.9 / ~3.0 | ~0.6 / ~0.9 |
-| var[B] / var[C] | ~5.7 / ~6.0 | ~4.7 / ~4.8 |
+| **bridge[A] — IBC-Br (baseline)** | **~0.45** | **~0.44** |
+| varx[D] — IBC-Br + IPCA + câmbio | ~0.50 | ~0.41 |
+| bridge[C] — todos | ~0.74 | ~0.59 |
+| varx[C] — todos | ~1.33 | ~1.13 |
+| bridge[B] — setorial | ~1.56 | ~0.90 |
+| varx[B] — setorial | ~1.69 | ~1.60 |
+| média histórica | ~2.12 | ~0.57 |
+| ARIMA / SARIMA | ~2.13 / ~2.13 | ~0.65 / ~0.67 |
+| random walk | ~3.14 | ~0.96 |
+| VAR[B/C] (prevê indicadores) | ~5.65 / ~5.97 | ~4.68 / ~4.85 |
 
-**Conclusão empírica:** a **bridge equation usando o IBC-Br (conjunto A)** é disparado o
-melhor nowcast — RMSE ~0.45 contra 3.14 do random walk. Faz sentido: o IBC-Br é o próprio
-proxy mensal do PIB calculado pelo BCB. O trio setorial (B) sozinho perde para o IBC-Br;
-juntar tudo (C) fica entre os dois. O VAR é instável como previsor pontual (prevê os
-indicadores em vez de condicionar nos valores já conhecidos). O choque da COVID (2020) é
-tratado como **quebra estrutural** via dummies de intervenção, e o RMSE é reportado também
+**Conclusão empírica:** a **bridge sobre o IBC-Br (baseline)** é o melhor nowcast — o
+IBC-Br, sendo a prévia oficial do PIB, é quase imbatível como regressor contemporâneo. O
+**VARX[D]** (IBC-Br + IPCA + câmbio, condicional) praticamente empata com o baseline e até
+o supera fora de 2020. O salto mais importante é VAR → VARX: condicionar nos indicadores já
+publicados derruba o RMSE de ~5.7 para ~1.3–1.7 (e ~0.5 no conjunto D), confirmando que o
+defeito do VAR puro era prever os indicadores em vez de usá-los. O choque da COVID (2020)
+é tratado como **quebra estrutural** via dummies de intervenção, e o RMSE é reportado
+também
 excluindo 2020. (Números variam um pouco a cada coleta de dados.)
 
 ## Indicadores
@@ -78,7 +97,7 @@ python scripts/fetch_data.py
 
 # 2. Gera o nowcast e roda o backtesting
 python scripts/run_nowcast.py --model all --backtest
-#   --model {arima,sarima,var,bridge,all}   escolhe o(s) modelo(s)
+#   --model {arima,sarima,var,varx,bridge,all}  escolhe o(s) modelo(s)
 #   --set {A,B,C,D}                  conjunto de variáveis (modelos multivariados)
 #   --target {qoq,yoy}               crescimento T/T-1 ou T/T-4
 #   --backtest                       roda backtest realista vs look-ahead
@@ -115,7 +134,7 @@ src/gdp_nowcast/
 ├── data_sources.py            # clientes BCB SGS + IBGE (com cache CSV)
 ├── dataset.py                 # alinhamento mensal→trimestral, alvo, anti look-ahead
 ├── preprocessing.py           # ADF, diferenciação reversível
-├── models/{arima,sarima,var,bridge}.py
+├── models/{arima,sarima,var,varx,bridge}.py
 ├── backtest.py                # rolling-origin, métricas, look-ahead
 └── nowcast.py                 # pipeline ponta-a-ponta
 scripts/{fetch_data,run_nowcast}.py
@@ -130,7 +149,7 @@ python -m pytest
 
 Cobrem o alinhamento trimestral, a reversibilidade das transformações, a guarda
 anti look-ahead (asserção de que dados posteriores à data de referência não vazam) e o
-ajuste/forecast dos três modelos.
+ajuste/forecast dos modelos (incluindo o condicionamento do VARX).
 
 ## Avisos
 

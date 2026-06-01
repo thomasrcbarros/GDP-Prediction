@@ -80,25 +80,30 @@ ALL_SERIES = [PIB_TARGET] + INDICATORS
 
 # Conjuntos de variáveis testados nos modelos multivariados ------------------
 FEATURE_SETS: dict[str, list[str]] = {
-    "A": ["ibcbr"],                          # parcimonioso
-    "B": ["pim", "pms", "pmc"],              # setorial (principal)
+    "A": ["ibcbr"],                          # IBC-Br (prévia oficial do PIB) -> baseline
+    "B": ["pim", "pms", "pmc"],              # setorial (oferta)
     "C": ["ibcbr", "pim", "pms", "pmc"],    # tudo
-    "D": ["ibcbr", "ipca", "cambio"],       # bloco macro (apenas VAR)
+    "D": ["ibcbr", "ipca", "cambio"],       # bloco macro (apenas VAR/VARX)
 }
-PRINCIPAL_SET = "B"
+PRINCIPAL_SET = "A"
+
+# Baseline de referência do projeto: o IBC-Br é a prévia oficial do PIB (BCB),
+# então a bridge sobre o IBC-Br é o padrão a ser superado pelos demais modelos.
+BASELINE_VARIANT = ("bridge", "A")
 
 # Combinações (modelo, conjunto) avaliadas no backtest comparativo.
 # ARIMA/SARIMA são univariados (sem conjunto).
 MODEL_VARIANTS: list[tuple[str, str | None]] = [
     ("arima", None),
     ("sarima", None),
-    ("bridge", "A"),
+    ("bridge", "A"),   # baseline (IBC-Br)
     ("bridge", "B"),
     ("bridge", "C"),
-    ("var", "A"),
     ("var", "B"),
     ("var", "C"),
-    ("var", "D"),
+    ("varx", "B"),
+    ("varx", "C"),
+    ("varx", "D"),
 ]
 
 # Parâmetros de modelagem / backtest -----------------------------------------
