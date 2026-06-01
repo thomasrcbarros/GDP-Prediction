@@ -42,14 +42,17 @@ alvo; os índices de confiança entram em nível):
 | **B** | PIM + PMS + PMC (indústria, serviços, comércio) | VARX |
 | **C** | IBC-Br + PIM + PMS + PMC | VARX |
 | **D** | IBC-Br + IPCA + câmbio (bloco macro) | VARX |
-| **E** | PIM + PMS + PMC + Ibovespa + confiança (consumidor + serviços) — **sem IBC-Br** | VARX (+ dummy COVID) |
+| **E** | endóg.: IBC-Br + spread de crédito · exóg.: fator PCA(PIM,PMS,PMC) + confiança consumidor | VARX (+ dummy COVID) |
 
 Variantes mantidas (a pedido): **baseline bridge[A]**, **ARIMA/SARIMA** (nos gráficos) e
 **apenas os VARX** entre os multivariados — o VAR puro e bridge[B/C] foram removidos.
 
-O **conjunto E** é um VARX de mercado + expectativas (Ibovespa, Índice de Confiança do
-Consumidor e Índice de Confiança de Serviços), **sem o IBC-Br**, e recebe uma **dummy de
-pico da COVID (2020Q1-Q2)** como regressor exógeno verdadeiro (não condicionado).
+O **conjunto E** é um VARX redesenhado com **3 endógenas** (`pib_growth`, `ibcbr`,
+`spread` de crédito) e **exógenas**: um **fator PCA** que resume os indicadores de
+atividade (PIM, PMS, PMC) num único componente, a **confiança do consumidor** e a
+**dummy de pico da COVID (2020Q1-Q2)** (regressor exógeno verdadeiro, não condicionado).
+O PIB é condicionado nos valores contemporâneos de IBC-Br e spread, já publicados antes
+do PIB.
 
 O backtest agora reporta, além do RMSE total: **RMSE pré-2020** e **RMSE pós-2020**
 separados, e pode usar **janela rolante de estimação** (`--train-window N`, em trimestres;
@@ -70,13 +73,13 @@ ex.: `20` ≈ 5 anos) em vez da amostra completa.
 | PMC volume varejo (dessaz) | IBGE SIDRA | 8880 / 7170 | ~45 d | var % T/T |
 | IPCA (variação mensal) | BCB SGS | 433 | ~10 d | soma trimestral |
 | Câmbio R$/US$ (venda, média) | BCB SGS | 3698 | ~1 d | var % T/T |
-| Ibovespa — fechamento mensal | Yahoo Finance | ^BVSP | ~1 d | var % T/T |
+| Spread médio de crédito — Total | BCB SGS | 20783 | ~30 d | nível (p.p.) |
 | Confiança do Consumidor | BCB SGS | 4393 | ~5 d | média trimestral (nível) |
-| Confiança de Serviços (dessaz) | BCB SGS | 20339 | ~10 d | média trimestral (nível) |
 
-> O Ibovespa vem do **Yahoo Finance** (`^BVSP`, fechamento mensal) porque o BCB
-> descontinuou a série no SGS. Confiança (Consumidor = 4393, Serviços dessaz = 20339) são
-> do SGS/BCB; confirme nomes/valores no teste local com `python scripts/fetch_data.py --refresh`.
+> O fator de atividade do conjunto E é o 1º componente principal (PCA) de PIM, PMS e PMC,
+> padronizados. O cliente de dados também suporta a fonte `yahoo` (ex.: `^BVSP`), caso
+> queira reintroduzir índices de mercado. Confirme nomes/valores no teste local com
+> `python scripts/fetch_data.py --refresh`.
 
 As defasagens de publicação (`config.py`) são o núcleo da avaliação de *look-ahead bias*:
 permitem simular exatamente quais dados estariam disponíveis numa dada data de referência.

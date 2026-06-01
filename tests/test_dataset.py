@@ -21,9 +21,27 @@ def test_covid_peak_dummy_marks_only_2020q1q2():
     assert d["covid_peak"].sum() == 2.0
 
 
-def test_feature_set_e_excludes_ibcbr():
-    assert "ibcbr" not in config.FEATURE_SETS["E"]
-    assert {"ibovespa", "confcons", "confserv"}.issubset(config.FEATURE_SETS["E"])
+def test_varx_e_composition():
+    # endógenas: pib_growth (implícito) + ibcbr + spread
+    assert config.VARX_E["endog"] == ["ibcbr", "spread"]
+    # fator PCA de atividade + confiança + dummy COVID são as exógenas verdadeiras
+    assert config.VARX_E["pca_inputs"] == ["pim", "pms", "pmc"]
+    assert config.VARX_E_EXOG_COLS == ["fator_atividade", "confcons", "covid_peak"]
+    # todas as séries-base do conjunto E precisam existir em SERIES
+    for c in config.FEATURE_SETS["E"]:
+        assert c in config.SERIES
+
+
+def test_pca_first_factor_summarizes_correlated_inputs():
+    idx = pd.date_range("2010-01-01", periods=24, freq="QS")
+    base = np.linspace(-1, 1, 24)
+    df = pd.DataFrame(
+        {"a": base + 0.01, "b": 2 * base, "c": 0.5 * base}, index=idx
+    )
+    f = dataset.pca_first_factor(df, "fator")
+    assert f.name == "fator"
+    # fator deve correlacionar positivamente com a média dos insumos
+    assert np.corrcoef(f.values, df.mean(axis=1).values)[0, 1] > 0.9
 
 
 def test_to_quarterly_mean_aligns_to_quarter_start():

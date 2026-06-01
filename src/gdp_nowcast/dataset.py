@@ -8,6 +8,7 @@ Responsável por:
 """
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 
 import config
@@ -91,6 +92,29 @@ def covid_peak_dummy(index: pd.DatetimeIndex) -> pd.DataFrame:
     idx = pd.DatetimeIndex(index)
     peak = pd.DatetimeIndex([pd.Timestamp(q) for q in COVID_PEAK_QUARTERS])
     return pd.DataFrame({"covid_peak": idx.isin(peak).astype(float)}, index=idx)
+
+
+def pca_first_factor(df: pd.DataFrame, name: str = "pca") -> pd.Series:
+    """Primeiro componente principal (padronizado) das colunas de ``df``.
+
+    Padroniza cada coluna (z-score) sobre as linhas sem NaN, extrai o 1º PC via
+    SVD e fixa o sinal para correlacionar positivamente com a média das colunas
+    (assim um valor alto do fator = atividade alta). Retorna uma série alinhada
+    ao índice original (NaN onde faltava algum insumo).
+    """
+    sub = df.dropna()
+    if sub.empty:
+        return pd.Series(np.nan, index=df.index, name=name)
+    mu = sub.mean()
+    sd = sub.std(ddof=0).replace(0.0, 1.0)
+    z = (sub - mu) / sd
+    u, s, vt = np.linalg.svd(z.values, full_matrices=False)
+    pc1 = u[:, 0] * s[0]
+    # sinal: positivo quando os insumos estão acima da média
+    if np.corrcoef(pc1, z.values.mean(axis=1))[0, 1] < 0:
+        pc1 = -pc1
+    factor = pd.Series(pc1, index=sub.index, name=name)
+    return factor.reindex(df.index)
 
 
 def _period_end(quarter_start: pd.Timestamp) -> pd.Timestamp:

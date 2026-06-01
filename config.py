@@ -74,15 +74,11 @@ SERIES: dict[str, SeriesSpec] = {
     # Bloco macro (variante D do VAR/VARX)
     "ipca": SeriesSpec("ipca", "bcb", "433", "M", "sum", "rate", 10),     # IPCA var% mensal
     "cambio": SeriesSpec("cambio", "bcb", "3698", "M", "mean", "growth", 1),  # R$/US$ venda média
-    # Bloco mercado/expectativas (variante E do VARX)
-    #   ibovespa -> Ibovespa, fechamento mensal (Yahoo Finance ^BVSP; o BCB
-    #               descontinuou a série no SGS).
+    # Bloco mercado/expectativas (variante E do VARX) — ver VARX_E abaixo.
+    #   spread   -> Spread médio das operações de crédito - Total (SGS 20783, p.p.).
     #   confcons -> Índice de Confiança do Consumidor (SGS 4393), mensal.
-    #   confserv -> Sondagem de Serviços – Índice de Confiança dessaz (SGS 20339),
-    #               mensal, série inicia em 2008-06.
-    "ibovespa": SeriesSpec("ibovespa", "yahoo", "^BVSP", "M", "last", "growth", 1),
+    "spread": SeriesSpec("spread", "bcb", "20783", "M", "mean", "level", 30),
     "confcons": SeriesSpec("confcons", "bcb", "4393", "M", "mean", "level", 5),
-    "confserv": SeriesSpec("confserv", "bcb", "20339", "M", "mean", "level", 10),
 }
 
 INDICATORS = list(SERIES.values())
@@ -94,10 +90,28 @@ FEATURE_SETS: dict[str, list[str]] = {
     "B": ["pim", "pms", "pmc"],              # setorial (oferta)
     "C": ["ibcbr", "pim", "pms", "pmc"],    # tudo
     "D": ["ibcbr", "ipca", "cambio"],       # bloco macro
-    # E: mercado/expectativas; SEM IBC-Br (requisito do usuário).
-    "E": ["pim", "pms", "pmc", "ibovespa", "confcons", "confserv"],
+    # E: VARX redesenhado (ver VARX_E). Endógenas: pib_growth, ibcbr, spread.
+    # Exógenas: fator PCA de (pim,pms,pmc), confiança do consumidor e dummy COVID.
+    # Listamos aqui todas as séries-base necessárias (p/ alinhar a janela comum).
+    "E": ["ibcbr", "spread", "pim", "pms", "pmc", "confcons"],
 }
 PRINCIPAL_SET = "A"
+
+# Composição explícita do VARX[E] -------------------------------------------
+#   endog        -> indicadores endógenos (além de pib_growth) no sistema VAR;
+#                   o PIB é condicionado nesses valores contemporâneos (já
+#                   publicados antes do PIB).
+#   pca_inputs   -> indicadores de atividade resumidos em 1 fator (PCA) exógeno.
+#   pca_name     -> nome da coluna do fator.
+#   exog_observed-> exógenas observadas adicionais.
+VARX_E = {
+    "endog": ["ibcbr", "spread"],
+    "pca_inputs": ["pim", "pms", "pmc"],
+    "pca_name": "fator_atividade",
+    "exog_observed": ["confcons"],
+}
+# Colunas exógenas verdadeiras do VARX[E] (fator PCA + confiança + dummy COVID).
+VARX_E_EXOG_COLS = [VARX_E["pca_name"], *VARX_E["exog_observed"], "covid_peak"]
 
 # Baseline de referência do projeto: o IBC-Br é a prévia oficial do PIB (BCB),
 # então a bridge sobre o IBC-Br é o padrão a ser superado pelos demais modelos.
@@ -116,7 +130,7 @@ MODEL_VARIANTS: list[tuple[str, str | None]] = [
     ("varx", "B"),
     ("varx", "C"),
     ("varx", "D"),
-    ("varx", "E"),     # Ibovespa + confiança (consumidor+serviços) + setorial, dummy COVID
+    ("varx", "E"),     # endóg: pib,ibcbr,spread | exóg: PCA(pim,pms,pmc),confcons,dummy
 ]
 
 # Parâmetros de modelagem / backtest -----------------------------------------

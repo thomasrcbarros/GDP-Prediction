@@ -52,12 +52,33 @@ def _uses_covid_dummy(model_name, feature_set) -> bool:
     return (model_name, feature_set) in config.COVID_DUMMY_VARIANTS
 
 
+def _is_varx_e(model_name, feature_set) -> bool:
+    return model_name == "varx" and feature_set == "E"
+
+
+def _exog_e(index, feats):
+    """Matriz do VARX[E]: endógenas (ibcbr, spread) + exógenas verdadeiras.
+
+    Exógenas: fator PCA de (pim, pms, pmc), confiança do consumidor e a dummy de
+    pico da COVID. As endógenas extras entram aqui também — o ``VarxModel`` separa
+    quais colunas são exógenas via ``exog_cols`` (= ``config.VARX_E_EXOG_COLS``).
+    """
+    spec = config.VARX_E
+    endog = feats[spec["endog"]].reindex(index)
+    fator = dataset.pca_first_factor(feats[spec["pca_inputs"]], spec["pca_name"]).reindex(index)
+    obs = feats[spec["exog_observed"]].reindex(index)
+    covid = dataset.covid_peak_dummy(index)
+    return pd.concat([endog, fator, obs, covid], axis=1)
+
+
 def _exog_for(model_name, feature_set, index, feats):
     """Matriz exógena de um modelo multivariado, alinhada a ``index``.
 
     Para variantes em ``config.COVID_DUMMY_VARIANTS`` anexa a dummy de pico da
     COVID (2020Q1-Q2) como regressor exógeno verdadeiro (coluna ``covid_peak``).
     """
+    if _is_varx_e(model_name, feature_set):
+        return _exog_e(index, feats)
     cols = config.FEATURE_SETS[feature_set]
     ind = feats[cols].reindex(index)
     if model_name == "bridge":
@@ -69,6 +90,8 @@ def _exog_for(model_name, feature_set, index, feats):
 
 def _model_factory(model_name, feature_set):
     """Cria a fábrica do modelo, injetando exog_cols quando há dummy COVID."""
+    if _is_varx_e(model_name, feature_set):
+        return lambda: MODELS[model_name](exog_cols=config.VARX_E_EXOG_COLS)
     if _uses_covid_dummy(model_name, feature_set):
         return lambda: MODELS[model_name](exog_cols=["covid_peak"])
     return lambda: MODELS[model_name]()
@@ -94,7 +117,8 @@ def nowcast(raw, model_name="arima", feature_set=None, target_kind="qoq") -> dic
         # trimestre a prever; VAR ignora exog_future.
         fut = exog_all.reindex([next_q]) if model_name == "varx" else None
         if model_name == "varx":
-            ind_cols = config.FEATURE_SETS[feature_set]
+            # exige todas as colunas presentes, exceto a dummy COVID (0 no futuro)
+            ind_cols = [c for c in exog_all.columns if c != "covid_peak"]
             if fut[ind_cols].isna().any().any():
                 raise ValueError(f"Indicadores de {next_q.year}Q{next_q.quarter} indisponíveis.")
         fc = model.forecast(1, exog_future=fut)
