@@ -35,16 +35,24 @@ def fetch_bcb_series(code: str, start: str | None = None) -> pd.Series:
 
     A API retorna ``[{"data": "dd/mm/yyyy", "valor": "x"}, ...]``.
     """
-    url = config.BCB_SGS_URL.format(code=code)
-    # O SGS retorna 406 para séries longas/diárias (ex.: Ibovespa) sem recorte de
-    # datas; sempre enviamos o intervalo dataInicial/dataFinal.
+    base = config.BCB_SGS_URL.format(code=code)
+    # O SGS recusa (406) requisições longas em séries diárias: cada chamada cobre
+    # no máximo ~10 anos. Buscamos em janelas e concatenamos.
     di = pd.to_datetime(start) if start else pd.Timestamp("1990-01-01")
-    df_ = pd.Timestamp.today()
-    url += f"&dataInicial={di:%d/%m/%Y}&dataFinal={df_:%d/%m/%Y}"
-    data = _request_json(url)
+    fim = pd.Timestamp.today().normalize()
+    chunks = []
+    win_start = di
+    while win_start <= fim:
+        win_end = min(win_start + pd.DateOffset(years=10) - pd.Timedelta(days=1), fim)
+        url = f"{base}&dataInicial={win_start:%d/%m/%Y}&dataFinal={win_end:%d/%m/%Y}"
+        part = _request_json(url)
+        if part:
+            chunks.extend(part)
+        win_start = win_end + pd.Timedelta(days=1)
+    data = chunks
     if not data:
         return pd.Series(dtype="float64")
-    df = pd.DataFrame(data)
+    df = pd.DataFrame(data).drop_duplicates(subset="data")
     df["data"] = pd.to_datetime(df["data"], format="%d/%m/%Y")
     df["valor"] = pd.to_numeric(df["valor"], errors="coerce")
     s = df.set_index("data")["valor"].sort_index()
