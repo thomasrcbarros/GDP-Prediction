@@ -36,6 +36,11 @@ def fetch_bcb_series(code: str, start: str | None = None) -> pd.Series:
     A API retorna ``[{"data": "dd/mm/yyyy", "valor": "x"}, ...]``.
     """
     url = config.BCB_SGS_URL.format(code=code)
+    # O SGS retorna 406 para séries longas/diárias (ex.: Ibovespa) sem recorte de
+    # datas; sempre enviamos o intervalo dataInicial/dataFinal.
+    di = pd.to_datetime(start) if start else pd.Timestamp("1990-01-01")
+    df_ = pd.Timestamp.today()
+    url += f"&dataInicial={di:%d/%m/%Y}&dataFinal={df_:%d/%m/%Y}"
     data = _request_json(url)
     if not data:
         return pd.Series(dtype="float64")
