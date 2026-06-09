@@ -38,6 +38,7 @@ class VarxModel(NowcastModel):
         self.ic = ic
         # colunas tratadas como exógenas verdadeiras (não endógenas/condicionadas)
         self.exog_cols = list(exog_cols) if exog_cols else []
+        self._exog_active: list[str] = []  # exógenas de fato usadas (não constantes)
         self.k_diff: dict[str, int] = {}
         self._anchors: dict[str, float] = {}
         self._result = None
@@ -66,6 +67,13 @@ class VarxModel(NowcastModel):
                 transformed[col] = s.diff()
         tdf = pd.DataFrame(transformed).dropna()
 
+        # Descarta exógenas constantes na janela de treino (ex.: a dummy COVID em
+        # janelas inteiramente anteriores a 2020): coluna de variância nula torna a
+        # regressão dos exógenos singular e produz previsões NaN.
+        if exog_true:
+            sub = df[exog_true].loc[tdf.index]
+            exog_true = [c for c in exog_true if float(sub[c].std(ddof=0)) > 1e-12]
+        self._exog_active = exog_true
         z = df[exog_true].loc[tdf.index] if exog_true else None
 
         maxlags = min(self.maxlags, max(1, len(tdf) // (len(self._columns) + 1) - 1))
@@ -81,13 +89,13 @@ class VarxModel(NowcastModel):
             raise RuntimeError("Modelo não treinado.")
         p = max(self._result.k_ar, 1)
 
-        # valor futuro dos exógenos verdadeiros (dummy COVID = 0 no futuro)
+        # valor futuro dos exógenos efetivamente usados (dummy COVID = 0 no futuro)
         z_future = None
-        if self.exog_cols:
-            if exog_future is not None and all(c in exog_future.columns for c in self.exog_cols):
-                z_future = exog_future[self.exog_cols].to_numpy(dtype="float64")
+        if self._exog_active:
+            if exog_future is not None and all(c in exog_future.columns for c in self._exog_active):
+                z_future = exog_future[self._exog_active].to_numpy(dtype="float64")
             else:
-                z_future = np.zeros((steps, len(self.exog_cols)))
+                z_future = np.zeros((steps, len(self._exog_active)))
 
         fc_kwargs = {"steps": steps}
         if z_future is not None:
@@ -134,5 +142,5 @@ class VarxModel(NowcastModel):
         return float(mu["pib_growth"] + adj[0])
 
     def summary(self) -> str:
-        extra = f", exog={len(self.exog_cols)}" if self.exog_cols else ""
+        extra = f", exog={len(self._exog_active)}" if self.exog_cols else ""
         return f"VARX(p={self.selected_lag}, vars={len(self._columns)}, cond{extra})"
