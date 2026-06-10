@@ -61,7 +61,7 @@ def plot_comparison(
             actual = res.actuals
     if actual is not None:
         ax1.plot(
-            actual.index, actual.values, color="black", lw=2.2, label="PIB observado"
+            actual.index, actual.values, color="black", lw=2.2, label="observed GDP"
         )
     for name, res in results.items():
         ax1.plot(
@@ -72,10 +72,17 @@ def plot_comparison(
             color=_color(name),
             label=name,
         )
-    ax1.set_title(f"Backtest one-step-ahead (crescimento {target_kind})")
-    ax1.set_ylabel("Crescimento do PIB (%)")
+    ax1.set_title(f"One-step-ahead backtest ({target_kind} growth)")
+    ax1.set_ylabel("GDP growth (%)")
     ax1.axhline(0, color="grey", lw=0.6, ls="--")
-    ax1.legend(fontsize=8)
+    # legenda abaixo do painel (em colunas) para não cobrir a série
+    ax1.legend(
+        fontsize=7,
+        ncol=3,
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.12),
+        frameon=False,
+    )
     ax1.grid(alpha=0.3)
 
     # --- Painel 2: RMSE por modelo (realista) ----------------------------
@@ -86,7 +93,7 @@ def plot_comparison(
         real["rmse"],
         color=[_color(m) for m in real["model"]],
     )
-    ax2.set_title("RMSE no backtest (menor = melhor)")
+    ax2.set_title("Backtest RMSE (lower = better)")
     ax2.set_ylabel("RMSE")
     ax2.tick_params(axis="x", rotation=30)
     ax2.grid(alpha=0.3, axis="y")
@@ -97,8 +104,8 @@ def plot_comparison(
         names = list(nowcasts.keys())
         vals = [nowcasts[n] for n in names]
         bars = ax3.bar(names, vals, color=[_color(n) for n in names])
-        ax3.set_title("Nowcast do próximo trimestre")
-        ax3.set_ylabel("Crescimento previsto (%)")
+        ax3.set_title("Next-quarter nowcast")
+        ax3.set_ylabel("Predicted growth (%)")
         ax3.axhline(0, color="grey", lw=0.6, ls="--")
         ax3.tick_params(axis="x", rotation=30)
         for b, v in zip(bars, vals):
@@ -112,6 +119,7 @@ def plot_comparison(
         ax3.grid(alpha=0.3, axis="y")
 
     fig.tight_layout()
-    fig.savefig(out_path, dpi=120)
+    # bbox_inches="tight" garante que a legenda abaixo do painel 1 não seja cortada
+    fig.savefig(out_path, dpi=120, bbox_inches="tight")
     plt.close(fig)
     return out_path
