@@ -2,8 +2,8 @@
 
 Defines the series codes (BCB SGS / IBGE), the monthly->quarterly aggregation, the
 transformation used as a feature, the publication lags (core of the
-look-ahead bias evaluation) and the **variable sets** (A/B/C/D) tested
-in the multivariate models.
+look-ahead bias evaluation), the **variable sets** (A/A2/B/C/D/E) and the
+**model variants** evaluated in the comparative backtest.
 """
 from __future__ import annotations
 
