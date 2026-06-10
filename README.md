@@ -1,227 +1,225 @@
-# GDP-Prediction — Nowcasting do PIB Brasileiro
+# GDP-Prediction — Nowcasting Brazilian GDP
 
-O PIB brasileiro é divulgado pelo IBGE com cerca de dois meses de atraso em relação ao
-fim do trimestre. Este projeto estima o crescimento econômico **em tempo real**
-(*nowcasting*) usando indicadores mensais antecedentes — abordagem usada por bancos
-centrais e instituições financeiras — antes da divulgação oficial.
+Brazilian GDP is released by IBGE roughly two months after the end of the quarter. This
+project estimates economic growth **in real time** (*nowcasting*) using leading monthly
+indicators — the approach used by central banks and financial institutions — before the
+official release.
 
-Implementa **ARIMA**, **SARIMA**, **VAR**, **VARX** (VAR condicional) e uma **bridge
-equation** com *backtesting* rolling e avaliação explícita de **look-ahead bias**
-(respeitando o calendário real de publicação de cada série). Dados públicos do **BCB
-(SGS)** e **IBGE**.
+It implements **ARIMA**, **SARIMA**, **VAR**, **VARX** (conditional VAR) and a **bridge
+equation** with rolling *backtesting* and explicit **look-ahead bias** evaluation
+(respecting each series' real publication calendar). Public data from **BCB (SGS)** and
+**IBGE**.
 
-### Modelos
+### Models
 
-| Modelo | Tipo | Como usa os indicadores |
+| Model | Type | How it uses the indicators |
 |--------|------|--------------------------|
-| ARIMA / SARIMA | univariado | só o passado do PIB (+ dummies de COVID) |
-| VAR | multivariado | sistema conjunto; **prevê** os indicadores |
-| VARX | multivariado | VAR conjunto, mas **condiciona** o PIB nos indicadores contemporâneos já publicados |
-| bridge | regressão | regride o PIB nos indicadores contemporâneos já publicados |
-| umidas | regressão | U-MIDAS: meses 1-3 do IBC-Br dentro do trimestre como regressores irrestritos (Foroni-Marcellino-Schumacher, 2015) |
-| pool | combinação | média com pesos iguais de 3 bridges — bridge IBC-Br, U-MIDAS e bridge setorial (PIM+PMS+PMC); literatura de forecast combination |
+| ARIMA / SARIMA | univariate | only GDP's own past (+ COVID dummies) |
+| VAR | multivariate | joint system; **forecasts** the indicators |
+| VARX | multivariate | joint VAR, but **conditions** GDP on the already-published contemporaneous indicators |
+| bridge | regression | regresses GDP on the already-published contemporaneous indicators |
+| umidas | regression | U-MIDAS: months 1-3 of IBC-Br within the quarter as unrestricted regressors (Foroni-Marcellino-Schumacher, 2015) |
+| pool | combination | equal-weight average of 3 bridges — IBC-Br bridge, U-MIDAS and sectoral bridge (PIM+PMS+PMC); forecast-combination literature |
 
-As variantes **umidas[A]** e **pool[C]** entram no backtest com a meta de **bater a
-baseline bridge[A]**.
+The **umidas[A]** and **pool[C]** variants enter the backtest with the goal of **beating
+the bridge[A] baseline**.
 
-ARIMA/SARIMA apenas extrapolam o passado do PIB. O VAR prevê os próprios indicadores —
-desperdiçando a vantagem do nowcasting. **VARX** e **bridge** exploram a real vantagem: os
-indicadores mensais do trimestre corrente (IBC-Br, PIM, PMS, PMC) que **já foram
-publicados** quando o PIB ainda não saiu.
+ARIMA/SARIMA merely extrapolate GDP's past. The VAR forecasts the indicators themselves —
+wasting the nowcasting advantage. **VARX** and **bridge** exploit the real edge: the
+current quarter's monthly indicators (IBC-Br, PIM, PMS, PMC) that have **already been
+published** while GDP is not yet out.
 
-### Baseline: IBC-Br (prévia oficial do PIB)
+### Baseline: IBC-Br (the official GDP preview)
 
-O **IBC-Br** é o índice de atividade econômica do Banco Central — a *prévia oficial* do
-PIB. Por isso a **bridge sobre o IBC-Br (conjunto A)** é adotada como **baseline do
-projeto**: é o número que qualquer modelo mais elaborado precisa superar para se justificar.
+**IBC-Br** is the Central Bank's economic activity index — the *official preview* of GDP.
+That is why the **bridge on IBC-Br (set A)** is adopted as the **project baseline**: it is
+the number any more elaborate model must beat to justify itself.
 
-### Conjuntos de variáveis (A/B/C/D/E)
+### Variable sets (A/B/C/D/E)
 
-Os modelos multivariados são testados com diferentes conjuntos de indicadores (os de
-atividade e o Ibovespa entram como **variação % T/T dessazonalizada**, mesma escala do
-alvo; os índices de confiança entram em nível):
+The multivariate models are tested with different indicator sets (activity indicators and
+Ibovespa enter as **seasonally adjusted % QoQ change**, the same scale as the target;
+confidence indices enter in levels):
 
-| Conjunto | Variáveis | Uso |
+| Set | Variables | Use |
 |----------|-----------|-----|
-| **A** | IBC-Br (dessaz BCB) | baseline (bridge) |
-| **A2** | IBC-Br dessaz BCB **+ dessaz própria (STL)** | bridge — **bate o baseline** |
-| **B** | PIM + PMS + PMC (indústria, serviços, comércio) | VARX |
+| **A** | IBC-Br (BCB seasonal adj.) | baseline (bridge) |
+| **A2** | IBC-Br BCB seasonal adj. **+ own seasonal adj. (STL)** | bridge — **beats the baseline** |
+| **B** | PIM + PMS + PMC (industry, services, retail) | VARX |
 | **C** | IBC-Br + PIM + PMS + PMC | VARX |
-| **D** | IBC-Br + IPCA + câmbio (bloco macro) | VARX |
-| **E** | endóg.: IBC-Br + spread de crédito · exóg.: fator PCA(PIM,PMS,PMC) + confiança consumidor | VARX (+ dummy COVID) |
+| **D** | IBC-Br + IPCA + FX (macro block) | VARX |
+| **E** | endog.: IBC-Br + credit spread · exog.: PCA factor(PIM,PMS,PMC) + consumer confidence | VARX (+ COVID dummy) |
 
-Variantes mantidas (a pedido): **baseline bridge[A]**, **ARIMA/SARIMA** (nos gráficos) e
-**apenas os VARX** entre os multivariados — o VAR puro e bridge[B/C] foram removidos.
+**Set E** is a redesigned VARX with **3 endogenous variables** (`pib_growth`, `ibcbr`,
+credit `spread`) and **exogenous** ones: a **PCA factor** summarizing the activity
+indicators (PIM, PMS, PMC) into a single component, **consumer confidence** and the
+**COVID-peak dummy (2020Q1-Q2)** (a true exogenous regressor, not conditioned on). GDP is
+conditioned on the contemporaneous values of IBC-Br and spread, both published before GDP.
 
-O **conjunto E** é um VARX redesenhado com **3 endógenas** (`pib_growth`, `ibcbr`,
-`spread` de crédito) e **exógenas**: um **fator PCA** que resume os indicadores de
-atividade (PIM, PMS, PMC) num único componente, a **confiança do consumidor** e a
-**dummy de pico da COVID (2020Q1-Q2)** (regressor exógeno verdadeiro, não condicionado).
-O PIB é condicionado nos valores contemporâneos de IBC-Br e spread, já publicados antes
-do PIB.
+### Bridge[A2]: dual seasonal adjustment (beats IBC-Br)
 
-### Bridge[A2]: dupla dessazonalização (supera o IBC-Br)
+The largest source of divergence between IBC-Br and GDP is **seasonal adjustment**
+(different models/samples; BCB Special Study 3/2018). Set **A2** exploits this: in addition
+to the BCB's seasonally adjusted IBC-Br, it computes an **own seasonal adjustment via STL**
+on the raw IBC-Br (SGS 24363) and uses **both** in a bridge. The divergence between the two
+adjustment methods carries signal about GDP's seasonality. In the realistic backtest (same
+window, 71 quarters): bridge[A] RMSE 0.562 → **bridge[A2] 0.524** (−6.8%; pre-2020 0.603 →
+0.541).
 
-A maior fonte de divergência entre IBC-Br e PIB é a **dessazonalização** (modelos/amostras
-distintos; BCB Estudo Especial 3/2018). O conjunto **A2** explora isso: além do IBC-Br
-dessaz do BCB, calcula uma **dessazonalização própria via STL** sobre o IBC-Br bruto (SGS
-24363) e usa **as duas** numa bridge. A divergência entre os dois métodos de ajuste carrega
-sinal sobre a sazonalidade do PIB. No backtest realista (mesma janela, 71 trimestres):
-bridge[A] RMSE 0.562 → **bridge[A2] 0.524** (−6.8%; pré-2020 0.603 → 0.541).
+The backtest now reports, beyond total RMSE: **pre-2020 RMSE** and **post-2020 RMSE**
+separately, and can use a **rolling estimation window** (`--train-window N`, in quarters;
+e.g. `20` ≈ 5 years) instead of the full sample.
 
-O backtest agora reporta, além do RMSE total: **RMSE pré-2020** e **RMSE pós-2020**
-separados, e pode usar **janela rolante de estimação** (`--train-window N`, em trimestres;
-ex.: `20` ≈ 5 anos) em vez da amostra completa.
+## Results (`--model all --backtest`, QoQ target)
 
-## Resultados (`--model all --backtest`, alvo QoQ)
+Realistic *rolling* backtest (expanding window, *one-step-ahead*) on the common evaluation
+window (39 quarters, ~2016–2025; `n` reflects each variant's window):
 
-Backtest *rolling* realista (janela expansível, *one-step-ahead*) na janela comum de
-avaliação (39 trimestres, ~2016–2025; `n` reflete a janela de cada variante):
-
-| modelo | RMSE | RMSE pré-2020 | RMSE pós-2020 | RMSE ex-COVID | MAE | viés |
+| model | RMSE | pre-2020 RMSE | post-2020 RMSE | ex-COVID RMSE | MAE | bias |
 |--------|-----:|-----:|-----:|-----:|-----:|-----:|
-| **bridge[A2]** (dupla dessaz) | **0.435** | **0.335** | 0.488 | **0.418** | **0.361** | 0.037 |
-| bridge[A] (IBC-Br oficial) | 0.448 | 0.405 | 0.474 | 0.435 | 0.390 | 0.035 |
-| varx[D] (IBC-Br+IPCA+câmbio) | 0.503 | 0.355 | 0.576 | 0.414 | 0.378 | 0.003 |
-| pool[C] (combinação) | 0.935 | 0.433 | 1.141 | 0.554 | 0.590 | −0.122 |
+| **bridge[A2]** (dual seas. adj.) | **0.435** | **0.335** | 0.488 | **0.418** | **0.361** | 0.037 |
+| bridge[A] (official IBC-Br) | 0.448 | 0.405 | 0.474 | 0.435 | 0.390 | 0.035 |
+| varx[D] (IBC-Br+IPCA+FX) | 0.503 | 0.355 | 0.576 | 0.414 | 0.378 | 0.003 |
+| pool[C] (combination) | 0.935 | 0.433 | 1.141 | 0.554 | 0.590 | −0.122 |
 | varx[C] | 1.331 | 1.584 | 1.145 | 1.132 | 0.872 | 0.158 |
 | varx[E] | 1.410 | 2.004 | 0.944 | 1.345 | 0.877 | −0.466 |
 | umidas[A] | 1.607 | 0.550 | 2.002 | 0.571 | 0.744 | 0.035 |
 | varx[B] | 1.694 | 1.241 | 1.924 | 1.604 | 1.128 | 0.180 |
-| média (baseline) | 2.123 | 0.534 | 2.673 | 0.572 | 1.022 | 0.104 |
+| mean (baseline) | 2.123 | 0.534 | 2.673 | 0.572 | 1.022 | 0.104 |
 | ARIMA | 2.129 | 0.619 | 2.669 | 0.646 | 1.053 | 0.036 |
 | SARIMA | 2.133 | 0.706 | 2.661 | 0.670 | 1.108 | −0.175 |
 | random walk | 3.143 | 0.817 | 3.954 | 0.959 | 1.486 | −0.040 |
 
-Na janela longa (71 trimestres, sem as séries que só começam em 2011): bridge[A] 0.562 →
-**bridge[A2] 0.524** (−6.8%). Nowcast 2026Q1: bridge[A2] **+0,99%**, bridge[A] +1,20%.
+On the long window (71 quarters, excluding the series that only start in 2011): bridge[A]
+0.562 → **bridge[A2] 0.524** (−6.8%). 2026Q1 nowcast: bridge[A2] **+0.99%**, bridge[A]
++1.20%.
 
-![Comparativo de backtest](backtest_comparison.png)
+![Backtest comparison](backtest_comparison.png)
 
-### Conclusões do estudo
+### Study conclusions
 
-1. **O IBC-Br é um benchmark altíssimo.** É a prévia oficial do PIB (agregação ponderada
-   pelo SCN das mesmas proxies setoriais), então qualquer modelo que apenas recombina
-   PIM/PMS/PMC, confiança, spread etc. tende a **reproduzi-lo com ruído** e perder. Foi o
-   que ocorreu com VAR, VARX, ARIMA/SARIMA, U-MIDAS e o *pool* de bridges.
-2. **O que bateu o IBC-Br foi atacar a divergência metodológica, não prever melhor.** A
-   maior fonte de erro entre IBC-Br e PIB é a **dessazonalização** distinta (BCB Estudo
-   Especial 3/2018). O `bridge[A2]` usa **duas** dessazonalizações do IBC-Br (a oficial do
-   BCB + uma própria via STL sobre a série bruta) — a *diferença* entre os métodos carrega
-   sinal sobre a sazonalidade do PIB. Resultado: **melhor modelo em todas as janelas**, com
-   o ganho concentrado no pré-2020 (0.405 → 0.335, −17%).
-3. **Combinação de previsões e U-MIDAS não ajudaram aqui.** Em pesos iguais, somar um
-   modelo ótimo (bridge IBC-Br) a modelos piores **piora** — o U-MIDAS (decomposição mensal
-   do IBC-Br) é especialmente ruim no pós-2020 volátil.
-4. **Correção agro ficou de fora.** As séries de PIB-agro trimestral saem junto com o PIB
-   (circular/look-ahead) e o LSPA é previsão de safra anual sem mapeamento limpo para QoQ —
-   alto risco de overfit em ~70 observações.
-5. **Ressalva.** A STL é estimada sobre toda a amostra (como a própria série dessaz do BCB,
-   que é revisada) — há leve *look-ahead* na sazonalidade, consistente com o resto do
-   pipeline. Reestimar a STL por janela é um refinamento futuro; o ganho deve persistir.
+1. **IBC-Br is an extremely strong benchmark.** It is the official GDP preview (a
+   national-accounts-weighted aggregation of the same sectoral proxies), so any model that
+   merely recombines PIM/PMS/PMC, confidence, spread, etc. tends to **reproduce it with
+   noise** and lose. That is what happened with VAR, VARX, ARIMA/SARIMA, U-MIDAS and the
+   bridge *pool*.
+2. **What beat IBC-Br was attacking the methodological divergence, not forecasting better.**
+   The biggest error source between IBC-Br and GDP is the different **seasonal adjustment**
+   (BCB Special Study 3/2018). `bridge[A2]` uses **two** seasonal adjustments of IBC-Br (the
+   official BCB one + an own STL one on the raw series) — the *difference* between methods
+   carries signal about GDP's seasonality. Result: **best model in every window**, with the
+   gain concentrated pre-2020 (0.405 → 0.335, −17%).
+3. **Forecast combination and U-MIDAS did not help here.** With equal weights, adding an
+   optimal model (IBC-Br bridge) to worse ones **hurts** — U-MIDAS (the monthly IBC-Br
+   decomposition) is especially poor in the volatile post-2020 period.
+4. **Agricultural correction left out.** Quarterly agro-GDP series are released together
+   with GDP (circular/look-ahead), and the LSPA is an annual-harvest forecast with no clean
+   mapping to QoQ — high overfitting risk on ~70 observations.
+5. **Caveat.** STL is estimated over the full sample (like the BCB's own seasonally adjusted
+   series, which is revised) — there is mild *look-ahead* in the seasonality, consistent
+   with the rest of the pipeline. Re-estimating STL per window is a future refinement; the
+   gain should persist.
 
+## Indicators
 
-## Indicadores
-
-| Série | Fonte | Código | Defasagem | Transformação |
+| Series | Source | Code | Lag | Transformation |
 |-------|-------|--------|-----------|---------------|
-| PIB (índice dessaz. trimestral) — *alvo* | BCB SGS | 22109 | ~60 d | var % T/T |
-| IBC-Br dessazonalizado | BCB SGS | 24364 | ~45 d | var % T/T |
-| PIM-PF indústria geral (dessaz) | BCB SGS | 21859 | ~35 d | var % T/T |
-| PMS volume serviços (dessaz) | IBGE SIDRA | 8688 / 7168 | ~45 d | var % T/T |
-| PMC volume varejo (dessaz) | IBGE SIDRA | 8880 / 7170 | ~45 d | var % T/T |
-| IPCA (variação mensal) | BCB SGS | 433 | ~10 d | soma trimestral |
-| Câmbio R$/US$ (venda, média) | BCB SGS | 3698 | ~1 d | var % T/T |
-| Spread médio de crédito — Total | BCB SGS | 20783 | ~30 d | nível (p.p.) |
-| Confiança do Consumidor | BCB SGS | 4393 | ~5 d | média trimestral (nível) |
+| GDP (quarterly seas. adj. index) — *target* | BCB SGS | 22109 | ~60 d | % QoQ change |
+| IBC-Br seasonally adjusted | BCB SGS | 24364 | ~45 d | % QoQ change |
+| PIM-PF general industry (seas. adj.) | BCB SGS | 21859 | ~35 d | % QoQ change |
+| PMS services volume (seas. adj.) | IBGE SIDRA | 8688 / 7168 | ~45 d | % QoQ change |
+| PMC retail volume (seas. adj.) | IBGE SIDRA | 8880 / 7170 | ~45 d | % QoQ change |
+| IPCA (monthly change) | BCB SGS | 433 | ~10 d | quarterly sum |
+| FX BRL/USD (sell, average) | BCB SGS | 3698 | ~1 d | % QoQ change |
+| Average credit spread — Total | BCB SGS | 20783 | ~30 d | level (p.p.) |
+| Consumer Confidence | BCB SGS | 4393 | ~5 d | quarterly average (level) |
 
-> O fator de atividade do conjunto E é o 1º componente principal (PCA) de PIM, PMS e PMC,
-> padronizados. O cliente de dados também suporta a fonte `yahoo` (ex.: `^BVSP`), caso
-> queira reintroduzir índices de mercado. Confirme nomes/valores no teste local com
+> The activity factor of set E is the 1st principal component (PCA) of standardized PIM,
+> PMS and PMC. The data client also supports the `yahoo` source (e.g. `^BVSP`), in case you
+> want to reintroduce market indices. Confirm names/values in your local run with
 > `python scripts/fetch_data.py --refresh`.
 
-As defasagens de publicação (`config.py`) são o núcleo da avaliação de *look-ahead bias*:
-permitem simular exatamente quais dados estariam disponíveis numa dada data de referência.
+The publication lags (`config.py`) are the core of the *look-ahead bias* evaluation: they
+let you simulate exactly which data would have been available at a given reference date.
 
-## Instalação
+## Installation
 
 ```bash
 pip install -r requirements.txt
 ```
 
-## Uso
+## Usage
 
 ```bash
-# 1. Coleta e cacheia as séries em data/ (use --refresh para forçar nova busca)
+# 1. Fetch and cache the series in data/ (use --refresh to force a new download)
 python scripts/fetch_data.py
 
-# 2. Gera o nowcast e roda o backtesting
+# 2. Generate the nowcast and run the backtesting
 python scripts/run_nowcast.py --model all --backtest
-#   --model {arima,sarima,var,varx,bridge,all}  escolhe o(s) modelo(s)
-#   --set {A,B,C,D,E}                conjunto de variáveis (modelos multivariados)
-#   --target {qoq,yoy}               crescimento T/T-1 ou T/T-4
-#   --backtest                       roda backtest realista vs look-ahead
-#   --train-window N                 janela rolante de estimação (N trimestres; ~20 = 5 anos)
-#   --plot                           gera gráfico comparativo (implica --backtest)
-#   --plot-file CAMINHO              PNG de saída (padrão: backtest_comparison.png)
-#   --refresh                        recoleta os dados
+#   --model {arima,sarima,var,varx,bridge,all}  choose the model(s)
+#   --set {A,B,C,D,E}                variable set (multivariate models)
+#   --target {qoq,yoy}               QoQ or YoY growth
+#   --backtest                       run realistic vs look-ahead backtest
+#   --train-window N                 rolling estimation window (N quarters; ~20 = 5 years)
+#   --plot                           generate comparison chart (implies --backtest)
+#   --plot-file PATH                 output PNG (default: backtest_comparison.png)
+#   --refresh                        re-fetch the data
 
-# Baseline (bridge com IBC-Br):
+# Baseline (bridge with IBC-Br):
 python scripts/run_nowcast.py --model bridge --set A --backtest
 
-# Novo VARX de trabalho+expectativas (sem IBC-Br, com dummy COVID):
-python scripts/run_nowcast.py --model varx --set E --backtest
+# Winning bridge with dual seasonal adjustment:
+python scripts/run_nowcast.py --model bridge --set A2 --backtest
 
-# Janela rolante de 5 anos (20 trimestres) vs amostra completa:
+# 5-year rolling window (20 quarters) vs full sample:
 python scripts/run_nowcast.py --model varx --set E --backtest --train-window 20
 
-# Com gráfico comparando todas as variantes:
+# With a chart comparing all variants:
 python scripts/run_nowcast.py --model all --plot
 ```
 
-> Com `--model all`, o backtest re-treina ARIMA/SARIMA com busca de ordem em cada janela
-> — leva vários minutos. Para iterar rápido, rode um modelo/conjunto por vez
-> (ex.: `--model varx --set E`).
+> With `--model all`, the backtest re-trains ARIMA/SARIMA with order search in each window
+> — it takes several minutes. To iterate fast, run one model/set at a time
+> (e.g. `--model bridge --set A2`).
 
-O `--plot` salva um PNG com três painéis: (1) previsões *one-step-ahead* de cada
-modelo vs. PIB observado no período de backtest; (2) RMSE por modelo (regime
-realista); (3) nowcast do próximo trimestre por modelo.
+`--plot` saves a PNG with three panels: (1) each model's *one-step-ahead* forecasts vs.
+observed GDP over the backtest period; (2) RMSE per model (realistic regime); (3) next
+quarter's nowcast per model.
 
-Saída típica do backtest: uma tabela comparando, por modelo, o erro no regime
-**realista** (janela expansível, *one-step-ahead*) com o regime **look-ahead** (ajuste
-sobre a amostra inteira). A diferença quantifica o viés de antecipação — o regime
-look-ahead apresenta erros sistematicamente menores justamente porque vaza informação
-do futuro.
+Typical backtest output: a table comparing, per model, the error in the **realistic**
+regime (expanding window, *one-step-ahead*) with the **look-ahead** regime (fit over the
+whole sample). The difference quantifies the anticipation bias — the look-ahead regime
+shows systematically smaller errors precisely because it leaks future information.
 
-## Estrutura
+## Structure
 
 ```
-config.py                      # códigos das séries, defasagens, parâmetros
+config.py                      # series codes, lags, parameters
 src/gdp_nowcast/
-├── data_sources.py            # clientes BCB SGS + IBGE (com cache CSV)
-├── dataset.py                 # alinhamento mensal→trimestral, alvo, anti look-ahead
-├── preprocessing.py           # ADF, diferenciação reversível
-├── models/{arima,sarima,var,varx,bridge}.py
-├── backtest.py                # rolling-origin, métricas, look-ahead
-└── nowcast.py                 # pipeline ponta-a-ponta
+├── data_sources.py            # BCB SGS + IBGE clients (with CSV cache)
+├── dataset.py                 # monthly→quarterly alignment, target, anti look-ahead
+├── preprocessing.py           # ADF, reversible differencing
+├── models/{arima,sarima,var,varx,bridge,pool}.py
+├── backtest.py                # rolling-origin, metrics, look-ahead
+└── nowcast.py                 # end-to-end pipeline
 scripts/{fetch_data,run_nowcast}.py
 tests/                         # pytest
 ```
 
-## Testes
+## Tests
 
 ```bash
 python -m pytest
 ```
 
-Cobrem o alinhamento trimestral, a reversibilidade das transformações, a guarda
-anti look-ahead (asserção de que dados posteriores à data de referência não vazam) e o
-ajuste/forecast dos modelos (incluindo o condicionamento do VARX).
+They cover quarterly alignment, transformation reversibility, the anti look-ahead guard
+(asserting that data after the reference date does not leak) and model fitting/forecasting
+(including the VARX conditioning).
 
-## Avisos
+## Notes
 
-- Os dados em `data/*.csv` não são versionados (ver `.gitignore`); rode `fetch_data.py`
-  para populá-los.
-- O nowcast usa séries já dessazonalizadas/revisadas do SGS; uma extensão natural seria
-  incorporar *vintages* reais (dados como publicados na época) para um teste de
-  look-ahead ainda mais fiel.
+- Data in `data/*.csv` is not versioned (see `.gitignore`); run `fetch_data.py` to
+  populate it.
+- The nowcast uses already seasonally adjusted/revised series from SGS; a natural extension
+  would be to incorporate real *vintages* (data as published at the time) for an even more
+  faithful look-ahead test.
