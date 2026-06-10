@@ -1,3 +1,5 @@
+# Git ignore rules: Python caches/build artifacts, virtualenvs, cached raw data
+# (data/*.csv) and generated charts. Keeps the repo to source + docs only.
 __pycache__/
 *.py[cod]
 *.egg-info/
