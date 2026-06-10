@@ -1,7 +1,7 @@
-"""Modelo SARIMA (sazonal) com seleção parcial de ordem por AIC.
+"""SARIMA model (seasonal) with partial order selection by AIC.
 
-Aceita regressores exógenos opcionais (ex.: dummies de intervenção da COVID),
-repassados ao SARIMAX do statsmodels.
+Accepts optional exogenous regressors (e.g.: COVID intervention dummies),
+passed to statsmodels' SARIMAX.
 """
 from __future__ import annotations
 
@@ -85,10 +85,10 @@ class SarimaModel(NowcastModel):
 
     def forecast(self, steps: int = 1, exog_future: pd.DataFrame | None = None) -> pd.Series:
         if self._result is None:
-            raise RuntimeError("Modelo não treinado.")
+            raise RuntimeError("Model not trained.")
         exog_future = align_exog(exog_future, self._exog_cols, steps)
         return self._result.forecast(steps=steps, exog=exog_future)
 
     def summary(self) -> str:
-        extra = f"+{len(self._exog_cols)} exóg" if self._exog_cols else ""
+        extra = f"+{len(self._exog_cols)} exog" if self._exog_cols else ""
         return f"SARIMA{self.order}x{self.seasonal_order}{extra}"

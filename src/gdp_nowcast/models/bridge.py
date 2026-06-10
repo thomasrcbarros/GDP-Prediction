@@ -1,15 +1,15 @@
-"""Bridge equation: o nowcasting de verdade.
+"""Bridge equation: the real nowcasting.
 
-Regride o crescimento do PIB do trimestre sobre os indicadores antecedentes
-*contemporâneos* (IBC-Br, produção industrial, desocupação) — que já estão
-publicados quando o nowcast é feito, antes da divulgação oficial do PIB.
+Regresses the quarter's GDP growth on the *contemporaneous* leading indicators
+(IBC-Br, industrial production, unemployment) — which are already published when
+the nowcast is made, before the official GDP release.
 
-Diferentemente do ARIMA/SARIMA (extrapolação univariada) e do VAR (que prevê os
-próprios indicadores), a bridge usa a informação já observada do trimestre
-corrente, que é exatamente a vantagem informacional do nowcasting. Por isso é o
-modelo que deve superar o random walk.
+Unlike ARIMA/SARIMA (univariate extrapolation) and the VAR (which forecasts the
+indicators themselves), the bridge uses the information already observed in the
+current quarter, which is exactly the informational advantage of nowcasting.
+That is why it is the model that should beat the random walk.
 
-Opcionalmente inclui a defasagem do PIB e dummies de COVID como regressores.
+Optionally includes the GDP lag and COVID dummies as regressors.
 """
 from __future__ import annotations
 
@@ -37,7 +37,7 @@ class BridgeModel(NowcastModel):
 
     def fit(self, target: pd.Series, exog: pd.DataFrame | None = None) -> "BridgeModel":
         if exog is None or exog.empty:
-            raise ValueError("A bridge equation requer indicadores (exog).")
+            raise ValueError("The bridge equation requires indicators (exog).")
         y = target.rename("pib_growth")
         X = self._design(y, exog)
         df = pd.concat([y, X], axis=1).dropna()
@@ -49,14 +49,14 @@ class BridgeModel(NowcastModel):
 
     def forecast(self, steps: int = 1, exog_future: pd.DataFrame | None = None) -> pd.Series:
         if self._result is None:
-            raise RuntimeError("Modelo não treinado.")
+            raise RuntimeError("Model not trained.")
         if exog_future is None or exog_future.empty:
             raise ValueError(
-                "A bridge precisa dos indicadores contemporâneos (exog_future)."
+                "The bridge needs the contemporaneous indicators (exog_future)."
             )
         Xf = exog_future.copy()
         if self.use_lagged_target and "pib_lag1" not in Xf.columns:
-            # a defasagem do PIB no período previsto é o último valor observado
+            # the GDP lag in the forecast period is the last observed value
             Xf["pib_lag1"] = self._last_target
         Xf = Xf[[c for c in self._cols]]
         Xf = sm.add_constant(Xf, has_constant="add")
@@ -64,4 +64,4 @@ class BridgeModel(NowcastModel):
         return pd.Series(np.asarray(pred), name="pib_growth")
 
     def summary(self) -> str:
-        return f"Bridge(OLS, {len(self._cols)} regressores)"
+        return f"Bridge(OLS, {len(self._cols)} regressors)"

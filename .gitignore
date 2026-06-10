@@ -6,9 +6,9 @@ __pycache__/
 .venv/
 venv/
 
-# Dados em cache (não versionar dados brutos)
+# Cached data (do not version raw data)
 data/*.csv
 !data/.gitkeep
 
-# Gráficos gerados
+# Generated plots
 *.png

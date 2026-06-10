@@ -19,7 +19,7 @@ def test_plot_comparison_creates_file(tmp_path):
     results = {m: _result(m) for m in ("arima", "sarima", "var")}
     rows = []
     for m, r in results.items():
-        rows.append({"model": m, "regime": "realista", **r.metrics})
+        rows.append({"model": m, "regime": "realistic", **r.metrics})
         rows.append({"model": m, "regime": "look-ahead", **r.metrics})
     table = pd.DataFrame(rows)
     nowcasts = {"arima": 0.6, "sarima": 0.5, "var": 1.0}

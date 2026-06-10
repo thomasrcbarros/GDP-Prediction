@@ -22,12 +22,12 @@ def test_covid_peak_dummy_marks_only_2020q1q2():
 
 
 def test_varx_e_composition():
-    # endógenas: pib_growth (implícito) + ibcbr + spread
+    # endogenous: pib_growth (implicit) + ibcbr + spread
     assert config.VARX_E["endog"] == ["ibcbr", "spread"]
-    # fator PCA de atividade + confiança + dummy COVID são as exógenas verdadeiras
+    # activity PCA factor + confidence + COVID dummy are the true exogenous ones
     assert config.VARX_E["pca_inputs"] == ["pim", "pms", "pmc"]
     assert config.VARX_E_EXOG_COLS == ["fator_atividade", "confcons", "covid_peak"]
-    # todas as séries-base do conjunto E precisam existir em SERIES
+    # all base series of set E must exist in SERIES
     for c in config.FEATURE_SETS["E"]:
         assert c in config.SERIES
 
@@ -40,7 +40,7 @@ def test_pca_first_factor_summarizes_correlated_inputs():
     )
     f = dataset.pca_first_factor(df, "fator")
     assert f.name == "fator"
-    # fator deve correlacionar positivamente com a média dos insumos
+    # factor should correlate positively with the mean of the inputs
     assert np.corrcoef(f.values, df.mean(axis=1).values)[0, 1] > 0.9
 
 
@@ -53,34 +53,34 @@ def test_to_quarterly_mean_aligns_to_quarter_start():
 
 
 def test_transform_indicator_growth_and_rate():
-    s = _monthly("2020-01-01", 6, step=0.0, base=100.0)  # nível constante
+    s = _monthly("2020-01-01", 6, step=0.0, base=100.0)  # constant level
     spec_g = config.SeriesSpec("x", "bcb", "0", "M", "mean", "growth")
     g = dataset.transform_indicator(s, spec_g)
-    assert (g.abs() < 1e-9).all()  # nível constante -> variação 0
+    assert (g.abs() < 1e-9).all()  # constant level -> zero change
     spec_r = config.SeriesSpec("y", "bcb", "0", "M", "sum", "rate")
     r = dataset.transform_indicator(_monthly("2020-01-01", 3, step=0, base=1.0), spec_r)
-    assert abs(r.iloc[0] - 3.0) < 1e-9  # soma trimestral de 1+1+1
+    assert abs(r.iloc[0] - 3.0) < 1e-9  # quarterly sum of 1+1+1
 
 
 def test_feature_sets_reference_known_series():
-    # colunas derivadas (não são séries brutas; calculadas em _prepare)
+    # derived columns (not raw series; computed in _prepare)
     derived = {"ibcbr_own", *config.UMIDAS_COLS}
     for name, cols in config.FEATURE_SETS.items():
         for c in cols:
             if c in derived:
                 continue
-            assert c in config.SERIES, f"{c} do conjunto {name} não está em SERIES"
+            assert c in config.SERIES, f"{c} from set {name} is not in SERIES"
 
 
 def test_stl_sa_growth_removes_seasonality():
-    # nível com tendência + sazonalidade mensal forte
+    # level with trend + strong monthly seasonality
     idx = pd.date_range("2010-01-01", periods=120, freq="MS")
     trend = 100 + 0.3 * np.arange(120)
     seas = 5 * np.sin(2 * np.pi * (idx.month - 1) / 12)
     s = pd.Series(trend + seas, index=idx)
     g = dataset.stl_sa_growth(s, "qoq")
     assert g.index.freqstr in ("QS-JAN", "QS-OCT", "QS") or g.index.is_monotonic_increasing
-    # crescimento dessaz deve ser suave (sem o pulso sazonal): desvio pequeno
+    # seasonally adjusted growth should be smooth (no seasonal pulse): small deviation
     assert g.std() < 5.0
     assert np.isfinite(g).all()
 
@@ -99,13 +99,13 @@ def test_pib_growth_qoq():
 
 
 def test_available_as_of_blocks_unpublished_data():
-    # série trimestral; lag de publicação de 60 dias
+    # quarterly series; 60-day publication lag
     spec = config.SeriesSpec(
         name="x", source="bcb", code="0", freq="Q", publication_lag_days=60
     )
     idx = pd.date_range("2020-01-01", periods=4, freq="QS")
     s = pd.Series([1.0, 2.0, 3.0, 4.0], index=idx)
-    # Em 2020-08-01: Q1 (fim 03-31 + 60d = 05-30) publicado; Q2 (06-30+60=08-29) ainda não
+    # On 2020-08-01: Q1 (end 03-31 + 60d = 05-30) published; Q2 (06-30+60=08-29) not yet
     avail = dataset.available_as_of(s, spec, pd.Timestamp("2020-08-01"))
     assert list(avail.index) == [pd.Timestamp("2020-01-01")]
 
@@ -124,7 +124,7 @@ def test_build_dataset_respects_lag_no_lookahead():
     df = dataset.build_dataset(
         raw, as_of=as_of, respect_publication_lag=True
     )
-    # nenhuma data de publicação pode ultrapassar as_of
+    # no publication date may exceed as_of
     for spec in config.ALL_SERIES:
         if spec.name == "pib":
             col = df["pib_growth"]
@@ -133,21 +133,21 @@ def test_build_dataset_respects_lag_no_lookahead():
         col = col.dropna()
         for q in col.index:
             pub = q + pd.offsets.QuarterEnd(0) + pd.Timedelta(days=spec.publication_lag_days)
-            assert pub <= as_of, f"vazamento em {spec.name} no trimestre {q}"
+            assert pub <= as_of, f"leakage in {spec.name} at quarter {q}"
 
 
 def test_monthly_growth_features_pivots_months_into_quarter_columns():
-    # 7 meses: jan-jul/2020; crescimento constante de 1 unidade sobre base 100
+    # 7 months: jan-jul/2020; constant growth of 1 unit over base 100
     s = _monthly("2020-01-01", 7, step=1.0, base=100.0)
     out = dataset.monthly_growth_features(s, "ibcbr")
     assert list(out.columns) == ["ibcbr_m1", "ibcbr_m2", "ibcbr_m3"]
-    # m1 do Q1 é NaN (pct_change descarta o 1º mês)
+    # m1 of Q1 is NaN (pct_change discards the 1st month)
     q1 = pd.Timestamp("2020-01-01")
     q2 = pd.Timestamp("2020-04-01")
     q3 = pd.Timestamp("2020-07-01")
     assert np.isnan(out.loc[q1, "ibcbr_m1"])
     assert abs(out.loc[q1, "ibcbr_m2"] - 1.0) < 1e-9   # 101/100 - 1
     assert abs(out.loc[q2, "ibcbr_m1"] - 100 * (103 / 102 - 1)) < 1e-9
-    # Q3 incompleto: só m1 observado, m2/m3 NaN
+    # Q3 incomplete: only m1 observed, m2/m3 NaN
     assert not np.isnan(out.loc[q3, "ibcbr_m1"])
     assert np.isnan(out.loc[q3, "ibcbr_m2"]) and np.isnan(out.loc[q3, "ibcbr_m3"])

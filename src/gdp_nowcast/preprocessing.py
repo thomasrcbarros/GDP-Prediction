@@ -1,4 +1,4 @@
-"""Pré-processamento: estacionariedade e transformações reversíveis."""
+"""Preprocessing: stationarity and reversible transformations."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -9,9 +9,9 @@ from statsmodels.tsa.stattools import adfuller
 
 
 def adf_test(series: pd.Series, signif: float = 0.05) -> dict:
-    """Teste Augmented Dickey-Fuller de estacionariedade.
+    """Augmented Dickey-Fuller test for stationarity.
 
-    Returns dict com estatística, p-valor e flag ``stationary``.
+    Returns dict with statistic, p-value and the ``stationary`` flag.
     """
     s = series.dropna()
     if len(s) < 8:
@@ -27,10 +27,10 @@ def adf_test(series: pd.Series, signif: float = 0.05) -> dict:
 
 @dataclass
 class Differencer:
-    """Diferenciação reversível de 1ª ordem.
+    """Reversible 1st-order differencing.
 
-    Guarda o último valor original para reconstruir a série em nível a partir
-    das previsões diferenciadas.
+    Stores the last original value to reconstruct the level series from the
+    differenced forecasts.
     """
 
     order: int = 1
@@ -43,15 +43,15 @@ class Differencer:
         return series.diff(self.order).dropna()
 
     def invert(self, last_level: float, diffs) -> np.ndarray:
-        """Reconstrói níveis a partir de um nível inicial e das diferenças."""
+        """Reconstructs levels from an initial level and the differences."""
         diffs = np.asarray(diffs, dtype="float64")
         return last_level + np.cumsum(diffs)
 
 
 def make_stationary(series: pd.Series, max_diff: int = 2) -> tuple[pd.Series, int]:
-    """Diferencia até a série passar no ADF (ou atingir ``max_diff``).
+    """Differences until the series passes the ADF test (or reaches ``max_diff``).
 
-    Returns (série transformada, ordem de diferenciação aplicada).
+    Returns (transformed series, applied differencing order).
     """
     s = series.dropna()
     for d in range(max_diff + 1):

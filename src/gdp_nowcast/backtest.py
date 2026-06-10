@@ -1,16 +1,16 @@
-"""Backtesting rolling-origin e avaliação de look-ahead bias.
+"""Rolling-origin backtesting and look-ahead bias evaluation.
 
-Dois regimes são comparados:
+Two regimes are compared:
 
-- **Realista (out-of-sample)**: janela expansível; o modelo é re-treinado a
-  cada trimestre usando *apenas* informação anterior à origem da previsão e
-  prevê o trimestre seguinte (one-step-ahead). É assim que um nowcast real
-  operaria.
-- **Ingênuo (look-ahead)**: o modelo é ajustado uma única vez sobre a amostra
-  inteira (inclusive trimestres futuros) e lê-se a previsão in-sample para cada
-  trimestre. Isso vaza informação do futuro e infla artificialmente a acurácia.
+- **Realistic (out-of-sample)**: expanding window; the model is re-trained each
+  quarter using *only* information prior to the forecast origin and forecasts
+  the next quarter (one-step-ahead). This is how a real nowcast would
+  operate.
+- **Naive (look-ahead)**: the model is fit a single time over the entire sample
+  (including future quarters) and the in-sample forecast is read for each
+  quarter. This leaks future information and artificially inflates accuracy.
 
-A diferença entre os dois erros quantifica o look-ahead bias.
+The difference between the two errors quantifies the look-ahead bias.
 """
 from __future__ import annotations
 
@@ -25,10 +25,10 @@ import config
 
 
 def render_progress(label: str, done: int, total: int, t0: float, width: int = 24) -> None:
-    """Desenha uma barra de progresso de uma linha no stderr (sem dependências).
+    """Draws a single-line progress bar on stderr (no dependencies).
 
-    Usa retorno de carro (``\\r``) para atualizar a mesma linha; ao concluir
-    (``done == total``) emite a quebra de linha final.
+    Uses a carriage return (``\\r``) to update the same line; on completion
+    (``done == total``) it emits the final line break.
     """
     if total <= 0:
         return
@@ -39,7 +39,7 @@ def render_progress(label: str, done: int, total: int, t0: float, width: int = 2
     eta = (elapsed / done * (total - done)) if done else 0.0
     sys.stderr.write(
         f"\r  {label:<22s} [{bar}] {done:>3d}/{total:<3d} "
-        f"{frac*100:5.1f}%  {elapsed:4.0f}s decorrido  ETA {eta:4.0f}s"
+        f"{frac*100:5.1f}%  {elapsed:4.0f}s elapsed  ETA {eta:4.0f}s"
     )
     sys.stderr.flush()
     if done >= total:
@@ -95,17 +95,17 @@ def rolling_backtest(
     score_start: pd.Timestamp | None = None,
     train_window: int | None = None,
 ) -> BacktestResult:
-    """Backtest realista one-step-ahead.
+    """Realistic one-step-ahead backtest.
 
-    Por padrão a janela de treino é **expansível** (usa todo o histórico até a
-    origem). Se ``train_window`` (nº de trimestres) for dado, usa uma **janela
-    rolante** de tamanho fixo — ex.: ``train_window=20`` ≈ 5 anos —, descartando
-    observações antigas. Isso permite comparar "amostra completa" vs "janela
-    rolante" de estimação.
+    By default the training window is **expanding** (uses the whole history up to
+    the origin). If ``train_window`` (number of quarters) is given, it uses a
+    fixed-size **rolling window** — e.g.: ``train_window=20`` ~ 5 years —,
+    discarding old observations. This allows comparing "full sample" vs "rolling
+    window" estimation.
 
-    ``score_start`` define a partir de qual data as previsões entram na avaliação
-    (janela de teste comum entre variantes). ``progress_label`` desenha a barra
-    de progresso no stderr.
+    ``score_start`` defines from which date the forecasts enter the evaluation
+    (common test window across variants). ``progress_label`` draws the progress
+    bar on stderr.
     """
     target = target.dropna()
     if exog is not None:
@@ -124,14 +124,14 @@ def rolling_backtest(
         lo = max(0, i - train_window) if train_window else 0
         train_y = target.iloc[lo:i]
         train_x = exog.iloc[lo:i] if exog is not None else None
-        # exógenas do trimestre previsto: dummies de COVID (conhecidas) e/ou
-        # indicadores contemporâneos já publicados (caso da bridge equation).
+        # exogenous of the forecast quarter: COVID dummies (known) and/or
+        # contemporaneous indicators already published (case of the bridge equation).
         fut_x = exog.iloc[[i]] if exog is not None else None
         try:
             model = model_factory()
             model.fit(train_y, train_x)
             yhat = float(model.forecast(steps=1, exog_future=fut_x).iloc[0])
-        except Exception:  # noqa: BLE001 - modelo pode não convergir em alguma janela
+        except Exception:  # noqa: BLE001 - model may not converge in some window
             if progress_label is not None:
                 render_progress(progress_label, step, total, t0)
             continue
@@ -158,23 +158,23 @@ def naive_lookahead_backtest(
     model_factory,
     min_train: int = config.MIN_TRAIN_QUARTERS,
 ) -> BacktestResult:
-    """Backtest com look-ahead: ajusta na amostra inteira e lê in-sample.
+    """Look-ahead backtest: fits on the entire sample and reads in-sample.
 
-    Demonstra a otimização artificial das métricas quando informação futura
-    vaza para o treino (seleção de ordem e parâmetros usa toda a série).
+    Demonstrates the artificial optimization of the metrics when future
+    information leaks into training (order and parameter selection uses the whole series).
     """
     target = target.dropna()
     try:
         model = model_factory()
         model.fit(target, exog)
-        # previsão in-sample one-step-ahead via predict do resultado subjacente
+        # in-sample one-step-ahead forecast via predict of the underlying result
         result = getattr(model, "_result", None)
         if result is not None and hasattr(result, "predict"):
             fitted = result.predict(start=min_train, end=len(target) - 1)
             fitted = np.asarray(fitted, dtype="float64")
         else:
             raise AttributeError
-    except Exception:  # noqa: BLE001 - fallback: repete último valor de treino
+    except Exception:  # noqa: BLE001 - fallback: repeats last training value
         fitted = target.iloc[min_train:].shift(1).bfill().values
 
     idx = target.index[min_train:]
@@ -202,7 +202,7 @@ def random_walk_baseline(
     min_train: int = config.MIN_TRAIN_QUARTERS,
     score_start: pd.Timestamp | None = None,
 ) -> BacktestResult:
-    """Baseline: previsão = último valor observado (random walk)."""
+    """Baseline: forecast = last observed value (random walk)."""
     target = target.dropna()
     preds = _slice_score(target.shift(1), min_train, score_start)
     actuals = _slice_score(target, min_train, score_start)
@@ -219,16 +219,16 @@ def mean_baseline(
     min_train: int = config.MIN_TRAIN_QUARTERS,
     score_start: pd.Timestamp | None = None,
 ) -> BacktestResult:
-    """Baseline: previsão = média histórica (expansível) até o período anterior.
+    """Baseline: forecast = historical (expanding) mean up to the previous period.
 
-    Para o crescimento trimestral do PIB (mean-reverting) costuma ser um
-    baseline mais forte que o random walk.
+    For quarterly GDP growth (mean-reverting) it is usually a stronger baseline
+    than the random walk.
     """
     target = target.dropna()
     preds = _slice_score(target.expanding().mean().shift(1), min_train, score_start)
     actuals = _slice_score(target, min_train, score_start)
     return BacktestResult(
-        model_name="media",
+        model_name="mean",
         predictions=preds,
         actuals=actuals,
         metrics=compute_metrics(actuals.values, preds.values),
@@ -236,7 +236,7 @@ def mean_baseline(
 
 
 def rmse_excluding_years(result: BacktestResult, years: list[int]) -> float:
-    """RMSE recomputado descartando trimestres dos anos indicados (ex.: COVID)."""
+    """RMSE recomputed discarding quarters of the indicated years (e.g. COVID)."""
     mask = ~result.actuals.index.year.isin(years)
     if not mask.any():
         return float("nan")
@@ -244,9 +244,9 @@ def rmse_excluding_years(result: BacktestResult, years: list[int]) -> float:
 
 
 def rmse_period(result: BacktestResult, start=None, end=None) -> float:
-    """RMSE restrito a um intervalo [start, end) de datas das previsões.
+    """RMSE restricted to an interval [start, end) of forecast dates.
 
-    Útil para comparar desempenho pré-2020 vs pós-2020 separadamente.
+    Useful for comparing pre-2020 vs post-2020 performance separately.
     """
     idx = result.actuals.index
     mask = pd.Series(True, index=idx)

@@ -1,8 +1,8 @@
-"""Clientes para coleta de séries temporais do BCB (SGS) e IBGE (agregados).
+"""Clients for collecting time series from BCB (SGS) and IBGE (aggregates).
 
-Cada função pública retorna uma ``pandas.Series`` indexada por data
-(``DatetimeIndex``, início do período) já ordenada. Há uma camada de cache em
-CSV para garantir reprodutibilidade offline.
+Each public function returns a ``pandas.Series`` indexed by date
+(``DatetimeIndex``, start of period), already sorted. There is a CSV caching
+layer to ensure offline reproducibility.
 """
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ import config
 
 
 def _request_json(url: str, retries: int = 4, timeout: int = 30, headers: dict | None = None):
-    """GET com retry e backoff exponencial. Retorna JSON decodificado."""
+    """GET with retry and exponential backoff. Returns decoded JSON."""
     last_exc: Exception | None = None
     for attempt in range(retries):
         try:
@@ -27,17 +27,17 @@ def _request_json(url: str, retries: int = 4, timeout: int = 30, headers: dict |
             last_exc = exc
             if attempt < retries - 1:
                 time.sleep(2 ** attempt)
-    raise RuntimeError(f"Falha ao buscar {url}: {last_exc}")
+    raise RuntimeError(f"Failed to fetch {url}: {last_exc}")
 
 
 def fetch_bcb_series(code: str, start: str | None = None) -> pd.Series:
-    """Busca uma série do SGS/BCB pelo código.
+    """Fetches an SGS/BCB series by its code.
 
-    A API retorna ``[{"data": "dd/mm/yyyy", "valor": "x"}, ...]``.
+    The API returns ``[{"data": "dd/mm/yyyy", "valor": "x"}, ...]``.
     """
     base = config.BCB_SGS_URL.format(code=code)
-    # O SGS recusa (406) requisições longas em séries diárias: cada chamada cobre
-    # no máximo ~10 anos. Buscamos em janelas e concatenamos.
+    # SGS rejects (406) long requests on daily series: each call covers at most
+    # ~10 years. We fetch in windows and concatenate.
     di = pd.to_datetime(start) if start else pd.Timestamp("1990-01-01")
     fim = pd.Timestamp.today().normalize()
     chunks = []
@@ -45,8 +45,8 @@ def fetch_bcb_series(code: str, start: str | None = None) -> pd.Series:
     while win_start <= fim:
         win_end = min(win_start + pd.DateOffset(years=10) - pd.Timedelta(days=1), fim)
         url = f"{base}&dataInicial={win_start:%d/%m/%Y}&dataFinal={win_end:%d/%m/%Y}"
-        # O SGS devolve 404 para janelas anteriores ao início da série (sem dados);
-        # tratamos como janela vazia e seguimos para a próxima.
+        # SGS returns 404 for windows before the series start (no data);
+        # we treat that as an empty window and move on to the next one.
         try:
             part = _request_json(url)
         except RuntimeError:
@@ -71,10 +71,10 @@ YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 
 
 def fetch_yahoo_series(symbol: str, start: str | None = None) -> pd.Series:
-    """Busca o fechamento mensal de um símbolo no Yahoo Finance (ex.: ``^BVSP``).
+    """Fetches the monthly close of a symbol on Yahoo Finance (e.g. ``^BVSP``).
 
-    O BCB descontinuou a série do Ibovespa no SGS, então usamos o Yahoo como
-    fonte. Retorna ``pd.Series`` mensal (índice no início do mês) de fechamentos.
+    BCB discontinued the Ibovespa series in SGS, so we use Yahoo as the source.
+    Returns a monthly ``pd.Series`` (index at the start of the month) of closes.
     """
     p1 = int(pd.to_datetime(start).timestamp()) if start else 0
     p2 = int(pd.Timestamp.today().timestamp())
@@ -95,10 +95,10 @@ def fetch_yahoo_series(symbol: str, start: str | None = None) -> pd.Series:
 def fetch_ibge_aggregate(
     aggregate: str, variable: str, periods: str = "all", classific: str = ""
 ) -> pd.Series:
-    """Busca uma variável de um agregado do IBGE (API SIDRA v3).
+    """Fetches a variable from an IBGE aggregate (SIDRA API v3).
 
-    Retorna a série nacional (N1). ``classific`` é o filtro de classificação no
-    formato da API (ex.: ``11046[56726]|12355[107071]``); vazio para nenhum.
+    Returns the national series (N1). ``classific`` is the classification filter
+    in the API format (e.g. ``11046[56726]|12355[107071]``); empty for none.
     """
     cl = f"&classificacao={classific}" if classific else ""
     url = config.IBGE_AGGREGATE_URL.format(
@@ -113,20 +113,20 @@ def fetch_ibge_aggregate(
         try:
             records[_parse_ibge_period(period)] = float(value)
         except (TypeError, ValueError):
-            continue  # "..." / "-" => indisponível
+            continue  # "..." / "-" => unavailable
     s = pd.Series(records).sort_index()
     s.name = f"ibge_{aggregate}_{variable}"
     return s
 
 
 def _parse_ibge_period(period: str) -> pd.Timestamp:
-    """Converte período IBGE (YYYYMM mensal ou YYYYTT trimestral) em Timestamp."""
+    """Converts an IBGE period (YYYYMM monthly or YYYYTT quarterly) to Timestamp."""
     year = int(period[:4])
     suffix = int(period[4:])
-    if len(period) == 6 and suffix <= 4:  # trimestre 1..4
+    if len(period) == 6 and suffix <= 4:  # quarter 1..4
         month = (suffix - 1) * 3 + 1
         return pd.Timestamp(year=year, month=month, day=1)
-    # mensal YYYYMM
+    # monthly YYYYMM
     return pd.Timestamp(year=year, month=suffix, day=1)
 
 
@@ -135,10 +135,10 @@ def _cache_path(name: str) -> str:
 
 
 def load_series(spec: config.SeriesSpec, refresh: bool = False) -> pd.Series:
-    """Carrega uma série respeitando o cache local.
+    """Loads a series respecting the local cache.
 
-    Se ``refresh`` for False e existir CSV em ``data/``, lê do disco. Caso
-    contrário, busca na API e grava o cache.
+    If ``refresh`` is False and a CSV exists in ``data/``, reads from disk.
+    Otherwise, fetches from the API and writes the cache.
     """
     path = _cache_path(spec.name)
     if not refresh and os.path.exists(path):
@@ -156,7 +156,7 @@ def load_series(spec: config.SeriesSpec, refresh: bool = False) -> pd.Series:
     elif spec.source == "yahoo":
         s = fetch_yahoo_series(spec.code, start=config.DEFAULT_START)
     else:
-        raise ValueError(f"Fonte desconhecida: {spec.source}")
+        raise ValueError(f"Unknown source: {spec.source}")
 
     s.name = spec.name
     os.makedirs(config.DATA_DIR, exist_ok=True)
@@ -165,5 +165,5 @@ def load_series(spec: config.SeriesSpec, refresh: bool = False) -> pd.Series:
 
 
 def load_all(refresh: bool = False) -> dict[str, pd.Series]:
-    """Carrega todas as séries definidas em ``config.ALL_SERIES``."""
+    """Loads all series defined in ``config.ALL_SERIES``."""
     return {spec.name: load_series(spec, refresh=refresh) for spec in config.ALL_SERIES}

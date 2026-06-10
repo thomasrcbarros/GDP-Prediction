@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Baixa e cacheia as séries do BCB/IBGE em ``data/``."""
+"""Downloads and caches the BCB/IBGE series into ``data/``."""
 from __future__ import annotations
 
 import argparse
@@ -14,18 +14,18 @@ from gdp_nowcast import data_sources  # noqa: E402
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Coleta de dados para nowcasting do PIB")
+    parser = argparse.ArgumentParser(description="Data collection for GDP nowcasting")
     parser.add_argument(
-        "--refresh", action="store_true", help="força nova busca ignorando o cache"
+        "--refresh", action="store_true", help="forces a new fetch ignoring the cache"
     )
     args = parser.parse_args()
 
     for spec in config.ALL_SERIES:
         series = data_sources.load_series(spec, refresh=args.refresh)
         period = (
-            f"{series.index.min():%Y-%m} a {series.index.max():%Y-%m}"
+            f"{series.index.min():%Y-%m} to {series.index.max():%Y-%m}"
             if len(series)
-            else "vazio"
+            else "empty"
         )
         print(f"  {spec.name:14s} {len(series):4d} obs  [{period}]  -> data/{spec.name}.csv")
     return 0

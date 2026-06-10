@@ -1,4 +1,4 @@
-"""Modelos de séries temporais para nowcasting do PIB."""
+"""Time series models for GDP nowcasting."""
 
 from .arima import ArimaModel
 from .sarima import SarimaModel

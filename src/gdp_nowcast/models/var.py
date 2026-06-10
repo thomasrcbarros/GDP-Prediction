@@ -1,8 +1,8 @@
-"""Modelo VAR multivariado para nowcasting do PIB.
+"""Multivariate VAR model for GDP nowcasting.
 
-Usa a série-alvo (pib_growth) em conjunto com os indicadores antecedentes.
-Cada coluna é diferenciada se não for estacionária (ADF); a previsão do alvo é
-reconstruída para a escala original quando houver diferenciação.
+Uses the target series (pib_growth) together with the leading indicators.
+Each column is differenced if it is not stationary (ADF); the target's forecast
+is reconstructed to the original scale when there is differencing.
 """
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ class VarModel(NowcastModel):
 
     def fit(self, target: pd.Series, exog: pd.DataFrame | None = None) -> "VarModel":
         if exog is None or exog.empty:
-            raise ValueError("VAR requer indicadores (exog).")
+            raise ValueError("VAR requires indicators (exog).")
         df = pd.concat([target.rename("pib_growth"), exog], axis=1).dropna()
         self._columns = list(df.columns)
 
@@ -56,9 +56,9 @@ class VarModel(NowcastModel):
         return self
 
     def forecast(self, steps: int = 1, exog_future: pd.DataFrame | None = None) -> pd.Series:
-        # exog_future é ignorado: o VAR prevê os próprios indicadores (endógenos).
+        # exog_future is ignored: the VAR forecasts the indicators themselves (endogenous).
         if self._result is None:
-            raise RuntimeError("Modelo não treinado.")
+            raise RuntimeError("Model not trained.")
         lag = max(self._result.k_ar, 1)
         fc = self._result.forecast(self._last_obs[-lag:], steps=steps)
         fc_df = pd.DataFrame(fc, columns=self._columns)

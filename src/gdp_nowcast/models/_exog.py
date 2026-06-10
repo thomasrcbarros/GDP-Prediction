@@ -1,4 +1,4 @@
-"""Utilidades para tratar regressores exógenos nos modelos."""
+"""Utilities for handling exogenous regressors in the models."""
 from __future__ import annotations
 
 import numpy as np
@@ -6,11 +6,11 @@ import pandas as pd
 
 
 def drop_constant_columns(exog: pd.DataFrame | None) -> pd.DataFrame | None:
-    """Remove colunas constantes (variância zero).
+    """Remove constant columns (zero variance).
 
-    Necessário porque, em janelas de backtest anteriores a 2020, as dummies de
-    COVID são todas zero — colunas constantes quebram a estimação (matriz
-    singular). Retorna ``None`` se não sobrar nenhuma coluna.
+    Needed because, in backtest windows prior to 2020, the COVID dummies are
+    all zero — constant columns break the estimation (singular matrix). Returns
+    ``None`` if no column remains.
     """
     if exog is None:
         return None
@@ -23,10 +23,10 @@ def drop_constant_columns(exog: pd.DataFrame | None) -> pd.DataFrame | None:
 def align_exog(
     exog_future: pd.DataFrame | None, cols: list[str], steps: int
 ) -> pd.DataFrame | None:
-    """Alinha o exog de previsão às colunas usadas no treino.
+    """Align the forecast exog to the columns used in training.
 
-    Mantém apenas ``cols`` (na ordem do treino); colunas ausentes viram 0.
-    Retorna ``None`` se o modelo foi treinado sem exógenas.
+    Keeps only ``cols`` (in the training order); missing columns become 0.
+    Returns ``None`` if the model was trained without exogenous variables.
     """
     if not cols:
         return None
