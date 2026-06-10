@@ -1,3 +1,3 @@
-"""Pacote de nowcasting do PIB brasileiro."""
+"""Brazilian GDP nowcasting package."""
 
 __version__ = "0.1.0"

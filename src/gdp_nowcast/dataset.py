@@ -1,10 +1,10 @@
-"""Construção do dataset trimestral alinhado para nowcasting.
+"""Construction of the aligned quarterly dataset for nowcasting.
 
-Responsável por:
-- agregar indicadores mensais para frequência trimestral;
-- construir a variável-alvo (crescimento do PIB);
-- simular a disponibilidade real dos dados numa data de referência
-  (defasagens de publicação) -- peça central da avaliação de look-ahead bias.
+Responsible for:
+- aggregating monthly indicators to quarterly frequency;
+- building the target variable (GDP growth);
+- simulating the real data availability at a reference date
+  (publication lags) -- the central piece of the look-ahead bias evaluation.
 """
 from __future__ import annotations
 
@@ -17,41 +17,42 @@ _AGG_FUNCS = {"mean": "mean", "sum": "sum", "last": "last"}
 
 
 def to_quarterly(series: pd.Series, agg: str) -> pd.Series:
-    """Agrega uma série (mensal ou trimestral) para frequência trimestral.
+    """Aggregates a series (monthly or quarterly) to quarterly frequency.
 
-    O índice resultante usa o início do trimestre (``QS``).
+    The resulting index uses the start of the quarter (``QS``).
     """
     func = _AGG_FUNCS.get(agg)
     if func is None:
-        raise ValueError(f"Agregação inválida: {agg}")
+        raise ValueError(f"Invalid aggregation: {agg}")
     resampled = series.resample("QS").agg(func)
     return resampled.dropna()
 
 
 def transform_indicator(series: pd.Series, spec) -> pd.Series:
-    """Converte um indicador mensal/trimestral na feature trimestral do modelo.
+    """Converts a monthly/quarterly indicator into the model's quarterly feature.
 
-    Segue ``spec.transform``:
-      - "growth": variação % T/T do nível dessaz (mesma escala do alvo);
-      - "rate":   soma trimestral (séries já em variação %, ex.: IPCA);
-      - "level":  nível trimestral bruto.
+    Follows ``spec.transform``:
+      - "growth": % q/q change of the seasonally adjusted level (same scale as the target);
+      - "rate":   quarterly sum (series already in % change, e.g. IPCA);
+      - "level":  raw quarterly level.
     """
     q = to_quarterly(series, spec.agg)
     if spec.transform == "growth":
         return (q.pct_change(1) * 100).dropna()
     if spec.transform == "rate":
-        return q.dropna()  # to_quarterly já somou os meses (agg="sum")
+        return q.dropna()  # to_quarterly already summed the months (agg="sum")
     return q.dropna()
 
 
 def stl_sa_growth(series: pd.Series, kind: str = "qoq") -> pd.Series:
-    """Dessazonaliza um nível mensal bruto (NSA) via STL e devolve a variação
-    trimestral (% T/T) do nível dessazonalizado.
+    """Seasonally adjusts a raw monthly level (NSA) via STL and returns the
+    quarterly (% q/q) change of the seasonally adjusted level.
 
-    Usa uma dessazonalização PRÓPRIA (STL robusto sobre o log, período 12),
-    distinta da do BCB. Combinada com a série dessaz oficial numa bridge, a
-    divergência entre os dois métodos carrega sinal sobre a sazonalidade do PIB
-    (principal fonte de divergência IBC-Br×PIB; cf. BCB Estudo Especial 3/2018).
+    Uses an OWN seasonal adjustment (robust STL over the log, period 12),
+    distinct from the BCB's. Combined with the official seasonally adjusted
+    series in a bridge, the divergence between the two methods carries signal
+    about GDP seasonality (the main source of divergence IBC-Br x GDP; cf. BCB
+    Estudo Especial 3/2018).
     """
     from statsmodels.tsa.seasonal import STL
 
@@ -66,22 +67,22 @@ def stl_sa_growth(series: pd.Series, kind: str = "qoq") -> pd.Series:
 
 
 def pib_growth(pib_index: pd.Series, kind: str = "qoq") -> pd.Series:
-    """Calcula o crescimento do PIB a partir do índice trimestral.
+    """Computes GDP growth from the quarterly index.
 
     Args:
-        pib_index: índice (ex.: dessazonalizado encadeado) trimestral.
-        kind: "qoq" (variação T/T-1, % ) ou "yoy" (T/T-4, %).
+        pib_index: quarterly index (e.g. chained seasonally adjusted).
+        kind: "qoq" (q/q-1 change, %) or "yoy" (q/q-4, %).
     """
     if kind == "qoq":
         return (pib_index.pct_change(1) * 100).dropna()
     if kind == "yoy":
         return (pib_index.pct_change(4) * 100).dropna()
-    raise ValueError("kind deve ser 'qoq' ou 'yoy'")
+    raise ValueError("kind must be 'qoq' or 'yoy'")
 
 
 def monthly_growth_features(series: pd.Series, prefix: str) -> pd.DataFrame:
-    """Variações % m/m do nível mensal dessaz, pivotadas em colunas
-    {prefix}_m1/{prefix}_m2/{prefix}_m3 por trimestre (índice QS)."""
+    """% m/m changes of the seasonally adjusted monthly level, pivoted into
+    columns {prefix}_m1/{prefix}_m2/{prefix}_m3 per quarter (QS index)."""
     g = (series.pct_change(1) * 100).dropna()
     pos = (g.index.month - 1) % 3 + 1
     quarter = g.index.to_period("Q").to_timestamp()
@@ -97,13 +98,13 @@ COVID_QUARTERS =["2020-01-01", "2020-04-01", "2020-07-01", "2020-10-01"]
 
 
 def covid_dummies(index: pd.DatetimeIndex) -> pd.DataFrame:
-    """Dummies de intervenção (pulso) para os trimestres do choque da COVID.
+    """Intervention (pulse) dummies for the quarters of the COVID shock.
 
-    O crescimento trimestral do PIB teve outliers extremos em 2020 (queda de
-    ~-9% e rebote de ~+8%). Tratá-los como pulsos exógenos evita que esses
-    pontos contaminem a estimação dos parâmetros nos demais trimestres
-    (quebra estrutural). Cada coluna é 1 no trimestre correspondente, 0 caso
-    contrário; nos períodos futuros (previsão) valem 0.
+    Quarterly GDP growth had extreme outliers in 2020 (a drop of ~-9% and a
+    rebound of ~+8%). Treating them as exogenous pulses prevents these points
+    from contaminating the parameter estimation in the other quarters
+    (structural break). Each column is 1 in the corresponding quarter, 0
+    otherwise; in future periods (forecast) they are 0.
     """
     idx = pd.DatetimeIndex(index)
     data = {}
@@ -114,15 +115,15 @@ def covid_dummies(index: pd.DatetimeIndex) -> pd.DataFrame:
     return pd.DataFrame(data, index=idx)
 
 
-COVID_PEAK_QUARTERS = ["2020-01-01", "2020-04-01"]  # 2020Q1 e 2020Q2
+COVID_PEAK_QUARTERS = ["2020-01-01", "2020-04-01"]  # 2020Q1 and 2020Q2
 
 
 def covid_peak_dummy(index: pd.DatetimeIndex) -> pd.DataFrame:
-    """Dummy única (1 coluna) marcando o pico do choque da COVID: 2020Q1-Q2.
+    """Single dummy (1 column) marking the peak of the COVID shock: 2020Q1-Q2.
 
-    Diferente de ``covid_dummies`` (um pulso por trimestre de 2020), aqui há uma
-    só variável binária valendo 1 em 2020Q1 e 2020Q2 e 0 no resto — usada como
-    regressor exógeno no VARX[E]. Em períodos futuros vale 0.
+    Unlike ``covid_dummies`` (one pulse per 2020 quarter), here there is a single
+    binary variable equal to 1 in 2020Q1 and 2020Q2 and 0 elsewhere — used as an
+    exogenous regressor in the VARX[E]. In future periods it is 0.
     """
     idx = pd.DatetimeIndex(index)
     peak = pd.DatetimeIndex([pd.Timestamp(q) for q in COVID_PEAK_QUARTERS])
@@ -130,12 +131,12 @@ def covid_peak_dummy(index: pd.DatetimeIndex) -> pd.DataFrame:
 
 
 def pca_first_factor(df: pd.DataFrame, name: str = "pca") -> pd.Series:
-    """Primeiro componente principal (padronizado) das colunas de ``df``.
+    """First principal component (standardized) of the columns of ``df``.
 
-    Padroniza cada coluna (z-score) sobre as linhas sem NaN, extrai o 1º PC via
-    SVD e fixa o sinal para correlacionar positivamente com a média das colunas
-    (assim um valor alto do fator = atividade alta). Retorna uma série alinhada
-    ao índice original (NaN onde faltava algum insumo).
+    Standardizes each column (z-score) over the rows without NaN, extracts the
+    1st PC via SVD and fixes the sign to correlate positively with the mean of
+    the columns (so a high factor value = high activity). Returns a series
+    aligned to the original index (NaN where some input was missing).
     """
     sub = df.dropna()
     if sub.empty:
@@ -145,7 +146,7 @@ def pca_first_factor(df: pd.DataFrame, name: str = "pca") -> pd.Series:
     z = (sub - mu) / sd
     u, s, vt = np.linalg.svd(z.values, full_matrices=False)
     pc1 = u[:, 0] * s[0]
-    # sinal: positivo quando os insumos estão acima da média
+    # sign: positive when the inputs are above the mean
     if np.corrcoef(pc1, z.values.mean(axis=1))[0, 1] < 0:
         pc1 = -pc1
     factor = pd.Series(pc1, index=sub.index, name=name)
@@ -153,18 +154,18 @@ def pca_first_factor(df: pd.DataFrame, name: str = "pca") -> pd.Series:
 
 
 def _period_end(quarter_start: pd.Timestamp) -> pd.Timestamp:
-    """Último dia do trimestre cujo início é ``quarter_start``."""
+    """Last day of the quarter whose start is ``quarter_start``."""
     return quarter_start + pd.offsets.QuarterEnd(0)
 
 
 def available_as_of(
     series: pd.Series, spec: config.SeriesSpec, as_of: pd.Timestamp
 ) -> pd.Series:
-    """Filtra uma série trimestral para o que estaria publicado em ``as_of``.
+    """Filters a quarterly series to what would have been published at ``as_of``.
 
-    Um valor referente a um trimestre só está disponível quando
-    ``fim_do_trimestre + publication_lag_days <= as_of``. Isso evita o uso de
-    informação do futuro (look-ahead bias).
+    A value referring to a quarter is only available when
+    ``end_of_quarter + publication_lag_days <= as_of``. This avoids the use of
+    future information (look-ahead bias).
     """
     if as_of is None:
         return series
@@ -180,24 +181,24 @@ def build_dataset(
     as_of: pd.Timestamp | None = None,
     respect_publication_lag: bool = False,
 ) -> pd.DataFrame:
-    """Monta o ``DataFrame`` trimestral com alvo + indicadores.
+    """Builds the quarterly ``DataFrame`` with target + indicators.
 
     Args:
-        raw: dicionário nome->série bruta (ver ``data_sources.load_all``).
-        target_kind: tipo de crescimento do PIB ("qoq" ou "yoy").
-        as_of: data de referência para simular disponibilidade. Se None, usa
-            tudo (cenário "ingênuo" / revisado).
-        respect_publication_lag: se True, aplica as defasagens de publicação
-            (cenário "realista"). Se False, usa apenas o corte temporal por
-            ``as_of`` sem defasagem (cenário com look-ahead bias).
+        raw: dictionary name->raw series (see ``data_sources.load_all``).
+        target_kind: type of GDP growth ("qoq" or "yoy").
+        as_of: reference date to simulate availability. If None, uses
+            everything (naive / revised scenario).
+        respect_publication_lag: if True, applies the publication lags
+            ("realistic" scenario). If False, uses only the temporal cutoff by
+            ``as_of`` without lag (scenario with look-ahead bias).
 
     Returns:
-        DataFrame indexado por trimestre com coluna "pib_growth" (alvo) e uma
-        coluna por indicador.
+        DataFrame indexed by quarter with column "pib_growth" (target) and one
+        column per indicator.
     """
     specs = {spec.name: spec for spec in config.ALL_SERIES}
 
-    # Alvo
+    # Target
     pib_q = to_quarterly(raw["pib"], specs["pib"].agg)
     target = pib_growth(pib_q, kind=target_kind)
     target_spec = specs["pib"]

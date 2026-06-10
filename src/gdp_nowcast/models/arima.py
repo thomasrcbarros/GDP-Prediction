@@ -1,7 +1,7 @@
-"""Modelo ARIMA com seleção de ordem (p,d,q) por AIC.
+"""ARIMA model with order selection (p,d,q) by AIC.
 
-Aceita regressores exógenos opcionais (ex.: dummies de intervenção da COVID),
-que são repassados ao ARIMAX do statsmodels.
+Accepts optional exogenous regressors (e.g.: COVID intervention dummies),
+which are passed to statsmodels' ARIMAX.
 """
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ class ArimaModel(NowcastModel):
                     continue
                 try:
                     res = ARIMA(y, order=order, exog=exog).fit()
-                except Exception:  # noqa: BLE001 - ordens inválidas/não convergem
+                except Exception:  # noqa: BLE001 - invalid orders/do not converge
                     continue
                 if res.aic < best_aic:
                     best_aic, best_order = res.aic, order
@@ -59,10 +59,10 @@ class ArimaModel(NowcastModel):
 
     def forecast(self, steps: int = 1, exog_future: pd.DataFrame | None = None) -> pd.Series:
         if self._result is None:
-            raise RuntimeError("Modelo não treinado.")
+            raise RuntimeError("Model not trained.")
         exog_future = align_exog(exog_future, self._exog_cols, steps)
         return self._result.forecast(steps=steps, exog=exog_future)
 
     def summary(self) -> str:
-        extra = f"+{len(self._exog_cols)} exóg" if self._exog_cols else ""
+        extra = f"+{len(self._exog_cols)} exog" if self._exog_cols else ""
         return f"ARIMA{self.order}{extra}"

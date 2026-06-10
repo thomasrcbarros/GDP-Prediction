@@ -1,6 +1,6 @@
-"""Geração de gráficos comparando os modelos de nowcasting.
+"""Generation of charts comparing the nowcasting models.
 
-Usa o backend ``Agg`` do matplotlib (sem display); salva arquivos PNG.
+Uses matplotlib's ``Agg`` backend (no display); saves PNG files.
 """
 from __future__ import annotations
 
@@ -18,12 +18,12 @@ _COLORS = {
     "varx": "#9467bd",
     "bridge": "#d62728",
     "random_walk": "#999999",
-    "media": "#bbbbbb",
+    "mean": "#bbbbbb",
 }
 
 
 def _color(label: str) -> str:
-    """Cor pela base do rótulo (ex.: 'bridge[B]' -> cor de 'bridge')."""
+    """Color by the label base (e.g.: 'bridge[B]' -> color of 'bridge')."""
     base = label.split("[")[0]
     return _COLORS.get(base, "#777777")
 
@@ -35,25 +35,25 @@ def plot_comparison(
     nowcasts: dict | None = None,
     target_kind: str = "qoq",
 ) -> str:
-    """Gera figura comparando os modelos e salva em ``out_path``.
+    """Generates a figure comparing the models and saves it to ``out_path``.
 
-    Painéis:
-      1. Série temporal: PIB observado vs. previsões one-step-ahead (realista)
-         de cada modelo no período de backtest.
-      2. Barras de RMSE por modelo (regime realista).
-      3. Barras de nowcast do próximo trimestre por modelo (se ``nowcasts``).
+    Panels:
+      1. Time series: observed GDP vs. one-step-ahead forecasts (realistic)
+         of each model over the backtest period.
+      2. RMSE bars per model (realistic regime).
+      3. Next-quarter nowcast bars per model (if ``nowcasts``).
 
     Args:
-        results: nome do modelo -> BacktestResult (regime realista).
-        metrics_table: tabela retornada por ``run_backtests``.
-        out_path: caminho do PNG de saída.
-        nowcasts: nome do modelo -> valor do nowcast (opcional).
+        results: model name -> BacktestResult (realistic regime).
+        metrics_table: table returned by ``run_backtests``.
+        out_path: output PNG path.
+        nowcasts: model name -> nowcast value (optional).
     """
     has_nowcast = bool(nowcasts)
     ncols = 3 if has_nowcast else 2
     fig = plt.figure(figsize=(6 * ncols, 5))
 
-    # --- Painel 1: previsões vs observado --------------------------------
+    # --- Panel 1: forecasts vs observed ----------------------------------
     ax1 = fig.add_subplot(1, ncols, 1)
     actual = None
     for name, res in results.items():
@@ -75,7 +75,7 @@ def plot_comparison(
     ax1.set_title(f"One-step-ahead backtest ({target_kind} growth)")
     ax1.set_ylabel("GDP growth (%)")
     ax1.axhline(0, color="grey", lw=0.6, ls="--")
-    # legenda abaixo do painel (em colunas) para não cobrir a série
+    # legend below the panel (in columns) so it doesn't cover the series
     ax1.legend(
         fontsize=7,
         ncol=3,
@@ -85,9 +85,9 @@ def plot_comparison(
     )
     ax1.grid(alpha=0.3)
 
-    # --- Painel 2: RMSE por modelo (realista) ----------------------------
+    # --- Panel 2: RMSE per model (realistic) -----------------------------
     ax2 = fig.add_subplot(1, ncols, 2)
-    real = metrics_table[metrics_table["regime"] == "realista"]
+    real = metrics_table[metrics_table["regime"] == "realistic"]
     ax2.bar(
         real["model"],
         real["rmse"],
@@ -98,7 +98,7 @@ def plot_comparison(
     ax2.tick_params(axis="x", rotation=30)
     ax2.grid(alpha=0.3, axis="y")
 
-    # --- Painel 3: nowcast do próximo trimestre --------------------------
+    # --- Panel 3: next-quarter nowcast -----------------------------------
     if has_nowcast:
         ax3 = fig.add_subplot(1, ncols, 3)
         names = list(nowcasts.keys())
@@ -119,7 +119,7 @@ def plot_comparison(
         ax3.grid(alpha=0.3, axis="y")
 
     fig.tight_layout()
-    # bbox_inches="tight" garante que a legenda abaixo do painel 1 não seja cortada
+    # bbox_inches="tight" ensures the legend below panel 1 is not clipped
     fig.savefig(out_path, dpi=120, bbox_inches="tight")
     plt.close(fig)
     return out_path

@@ -9,7 +9,7 @@ from gdp_nowcast.models import ArimaModel, BridgeModel, SarimaModel, VarModel, V
 def _series(n=60, seed=0):
     rng = np.random.default_rng(seed)
     idx = pd.date_range("2005-01-01", periods=n, freq="QS")
-    # AR(1) estacionário em torno de 0.5
+    # stationary AR(1) around 0.5
     y = np.zeros(n)
     for t in range(1, n):
         y[t] = 0.5 + 0.4 * y[t - 1] + rng.normal(scale=0.3)
@@ -35,7 +35,7 @@ def test_var_uses_exog_and_forecasts():
     y = _series()
     rng = np.random.default_rng(7)
     n = len(y)
-    # indicadores correlacionados com y mas com ruído independente (não colineares)
+    # indicators correlated with y but with independent noise (not collinear)
     exog = pd.DataFrame(
         {
             "ibcbr": 0.6 * y.values + rng.normal(scale=0.5, size=n),
@@ -62,7 +62,7 @@ def test_varx_accepts_exog_dummy_column():
         index=y.index,
     )
     m = VarxModel(maxlags=2, exog_cols=["covid_peak"]).fit(y, exog)
-    # covid_peak é exógena -> não vira coluna endógena do sistema
+    # covid_peak is exogenous -> does not become an endogenous column of the system
     assert "covid_peak" not in m._columns
     assert "pim" in m._columns
     fut = pd.DataFrame({"pim": [1.0], "covid_peak": [0.0]})
@@ -73,11 +73,11 @@ def test_varx_accepts_exog_dummy_column():
 def test_rmse_period_splits_pre_post():
     idx = pd.date_range("2018-01-01", periods=12, freq="QS")
     actual = pd.Series(np.zeros(12), index=idx, name="actual")
-    pred = pd.Series(np.ones(12), index=idx, name="pred")  # erro constante = 1
+    pred = pd.Series(np.ones(12), index=idx, name="pred")  # constant error = 1
     res = bt.BacktestResult("x", pred, actual, bt.compute_metrics(actual.values, pred.values))
     assert abs(bt.rmse_period(res, end="2020-01-01") - 1.0) < 1e-9
     assert abs(bt.rmse_period(res, start="2020-01-01") - 1.0) < 1e-9
-    # janela vazia -> nan
+    # empty window -> nan
     assert np.isnan(bt.rmse_period(res, start="2030-01-01"))
 
 
@@ -103,7 +103,7 @@ def test_varx_conditions_on_contemporaneous_indicators():
         index=y.index,
     )
     m = VarxModel(maxlags=3).fit(y, exog)
-    # condicionar deve diferir da previsão incondicional
+    # conditioning should differ from the unconditional forecast
     fut = pd.DataFrame({"ibcbr": [2.0], "pim": [1.5]})
     cond = m.forecast(1, exog_future=fut).iloc[0]
     uncond = m.forecast(1, exog_future=None).iloc[0]
@@ -114,12 +114,12 @@ def test_varx_conditions_on_contemporaneous_indicators():
 def test_bridge_uses_contemporaneous_exog():
     y = _series()
     rng = np.random.default_rng(3)
-    # indicador fortemente ligado ao alvo contemporâneo
+    # indicator strongly tied to the contemporaneous target
     exog = pd.DataFrame(
         {"ibcbr": y.values + rng.normal(scale=0.2, size=len(y))}, index=y.index
     )
     m = BridgeModel(use_lagged_target=False).fit(y, exog)
-    # prever usando o indicador contemporâneo do próximo período
+    # forecast using the contemporaneous indicator of the next period
     fut = pd.DataFrame({"ibcbr": [1.0]})
     fc = m.forecast(1, exog_future=fut)
     assert np.isfinite(fc.iloc[0])
@@ -131,14 +131,14 @@ def test_bridge_requires_exog_future():
     m = BridgeModel(use_lagged_target=False).fit(y, exog)
     try:
         m.forecast(1, exog_future=None)
-        assert False, "deveria exigir exog_future"
+        assert False, "should require exog_future"
     except ValueError:
         pass
 
 
 def test_arima_exog_intervention_runs():
     y = _series()
-    covid = dataset.covid_dummies(y.index)  # todas zero fora de 2020 -> são dropadas
+    covid = dataset.covid_dummies(y.index)  # all zero outside 2020 -> they are dropped
     m = ArimaModel(max_p=1, max_d=1, max_q=1).fit(y, covid)
     fc = m.forecast(1, exog_future=covid.iloc[[0]])
     assert np.isfinite(fc.iloc[0])

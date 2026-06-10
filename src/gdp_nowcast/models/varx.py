@@ -1,22 +1,23 @@
-"""Modelo VARX (VAR condicional) para nowcasting do PIB.
+"""VARX model (conditional VAR) for GDP nowcasting.
 
-O VAR puro (``var.py``) prevê os próprios indicadores, desperdiçando a vantagem
-do nowcasting. O VARX estima o mesmo sistema conjunto [pib + indicadores], mas
-na previsão **condiciona** o PIB nos valores dos indicadores do trimestre
-corrente que **já foram publicados** (IBC-Br, PIM, PMS, PMC saem antes do PIB).
+The pure VAR (``var.py``) forecasts the indicators themselves, wasting the
+nowcasting advantage. The VARX estimates the same joint system [pib + indicators],
+but at forecast time it **conditions** GDP on the values of the current quarter's
+indicators that **have already been published** (IBC-Br, PIM, PMS, PMC are
+released before GDP).
 
-Condicionamento gaussiano: dada a previsão conjunta de um passo
-``mu = (mu_y, mu_w)`` e a covariância dos resíduos ``Sigma``, a previsão do PIB
-(y) condicionada nos indicadores observados ``w_obs`` é
+Gaussian conditioning: given the one-step joint forecast
+``mu = (mu_y, mu_w)`` and the residual covariance ``Sigma``, the GDP forecast
+(y) conditioned on the observed indicators ``w_obs`` is
 
     y_cond = mu_y + Sigma_yw · Sigma_ww^{-1} · (w_obs - mu_w).
 
-Regressores exógenos verdadeiros (ex.: a dummy de pico da COVID 2020Q1-Q2) NÃO
-são endogenizados nem condicionados: entram no ``exog`` do VAR. Suas colunas são
-informadas via ``exog_cols`` no construtor.
+True exogenous regressors (e.g.: the COVID peak dummy 2020Q1-Q2) are NOT
+endogenized nor conditioned: they enter the VAR's ``exog``. Their columns are
+provided via ``exog_cols`` in the constructor.
 
-Quando os indicadores contemporâneos não são fornecidos, recai na previsão
-incondicional (equivalente ao VAR puro).
+When the contemporaneous indicators are not provided, it falls back to the
+unconditional forecast (equivalent to the pure VAR).
 """
 from __future__ import annotations
 
@@ -36,19 +37,19 @@ class VarxModel(NowcastModel):
     def __init__(self, maxlags: int = 4, ic: str = "aic", exog_cols: list[str] | None = None):
         self.maxlags = maxlags
         self.ic = ic
-        # colunas tratadas como exógenas verdadeiras (não endógenas/condicionadas)
+        # columns treated as true exogenous (not endogenous/conditioned)
         self.exog_cols = list(exog_cols) if exog_cols else []
-        self._exog_active: list[str] = []  # exógenas de fato usadas (não constantes)
+        self._exog_active: list[str] = []  # exogenous actually used (non-constant)
         self.k_diff: dict[str, int] = {}
         self._anchors: dict[str, float] = {}
         self._result = None
-        self._columns: list[str] = []   # colunas endógenas (pib + indicadores)
+        self._columns: list[str] = []   # endogenous columns (pib + indicators)
         self.selected_lag: int | None = None
 
     def fit(self, target: pd.Series, exog: pd.DataFrame | None = None) -> "VarxModel":
         if exog is None or exog.empty:
-            raise ValueError("VARX requer indicadores.")
-        # separa exógenas verdadeiras (ex.: dummy COVID) dos indicadores endógenos
+            raise ValueError("VARX requires indicators.")
+        # separate true exogenous (e.g.: COVID dummy) from the endogenous indicators
         exog_true = [c for c in self.exog_cols if c in exog.columns]
         endog_ind = [c for c in exog.columns if c not in exog_true]
 
@@ -67,9 +68,9 @@ class VarxModel(NowcastModel):
                 transformed[col] = s.diff()
         tdf = pd.DataFrame(transformed).dropna()
 
-        # Descarta exógenas constantes na janela de treino (ex.: a dummy COVID em
-        # janelas inteiramente anteriores a 2020): coluna de variância nula torna a
-        # regressão dos exógenos singular e produz previsões NaN.
+        # Drop exogenous columns that are constant in the training window (e.g.: the
+        # COVID dummy in windows entirely prior to 2020): a zero-variance column makes
+        # the exogenous regression singular and produces NaN forecasts.
         if exog_true:
             sub = df[exog_true].loc[tdf.index]
             exog_true = [c for c in exog_true if float(sub[c].std(ddof=0)) > 1e-12]
@@ -86,10 +87,10 @@ class VarxModel(NowcastModel):
 
     def forecast(self, steps: int = 1, exog_future: pd.DataFrame | None = None) -> pd.Series:
         if self._result is None:
-            raise RuntimeError("Modelo não treinado.")
+            raise RuntimeError("Model not trained.")
         p = max(self._result.k_ar, 1)
 
-        # valor futuro dos exógenos efetivamente usados (dummy COVID = 0 no futuro)
+        # future value of the exogenous variables actually used (COVID dummy = 0 in the future)
         z_future = None
         if self._exog_active:
             if exog_future is not None and all(c in exog_future.columns for c in self._exog_active):
@@ -100,7 +101,7 @@ class VarxModel(NowcastModel):
         fc_kwargs = {"steps": steps}
         if z_future is not None:
             fc_kwargs["exog_future"] = z_future
-        mu = self._result.forecast(self._tdf.values[-p:], **fc_kwargs)[0]  # 1 passo
+        mu = self._result.forecast(self._tdf.values[-p:], **fc_kwargs)[0]  # 1 step
         mu = dict(zip(self._columns, mu))
 
         y_hat = mu["pib_growth"]
@@ -116,10 +117,10 @@ class VarxModel(NowcastModel):
         return pd.Series([y_hat], name="pib_growth")
 
     def _condition(self, mu: dict, obs: dict) -> float:
-        """Condicionamento gaussiano do PIB nos indicadores observados.
+        """Gaussian conditioning of GDP on the observed indicators.
 
-        ``obs`` traz os indicadores no MESMO espaço transformado do modelo
-        (variação % T/T), portanto sofre a mesma diferenciação se aplicável.
+        ``obs`` carries the indicators in the SAME transformed space as the model
+        (% Q/Q change), hence it undergoes the same differencing if applicable.
         """
         cols = self._columns
         sigma = np.asarray(self._result.sigma_u)

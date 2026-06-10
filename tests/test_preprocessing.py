@@ -27,7 +27,7 @@ def test_differencer_inverts_to_levels():
 
 def test_make_stationary_returns_order():
     rng = np.random.default_rng(2)
-    # random walk com drift: claramente não-estacionário
+    # random walk with drift: clearly non-stationary
     rw = pd.Series(np.cumsum(0.5 + rng.normal(size=200)))
     out, d = pp.make_stationary(rw, max_diff=2)
     if not pp.adf_test(rw)["stationary"]:

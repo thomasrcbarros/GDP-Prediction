@@ -1,11 +1,11 @@
-"""Pool de bridges com pesos iguais (forecast combination).
+"""Pool of bridges with equal weights (forecast combination).
 
-Combina previsões de várias bridge equations — cada componente usa um
-subconjunto de regressores — pela média aritmética simples. A literatura de
-combinação de previsões (Timmermann, 2006) mostra que pesos iguais são um
-benchmark difícil de superar; aqui o pool também ganha robustez à
-indisponibilidade de indicadores: componentes sem dados no trimestre previsto
-são simplesmente excluídos da média.
+Combines forecasts from several bridge equations — each component uses a
+subset of regressors — by the simple arithmetic mean. The forecast combination
+literature (Timmermann, 2006) shows that equal weights are a benchmark that is
+hard to beat; here the pool also gains robustness to the unavailability of
+indicators: components without data in the forecast quarter are simply excluded
+from the mean.
 """
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ class PoolModel(NowcastModel):
 
     def fit(self, target: pd.Series, exog: pd.DataFrame | None = None) -> "PoolModel":
         if exog is None or exog.empty:
-            raise ValueError("O pool de bridges requer indicadores (exog).")
+            raise ValueError("The pool of bridges requires indicators (exog).")
         self._covid_cols = [c for c in exog.columns if c.startswith("covid_")]
         self._models = {}
         for comp_name, cols in self.components.items():
@@ -36,9 +36,9 @@ class PoolModel(NowcastModel):
 
     def forecast(self, steps: int = 1, exog_future: pd.DataFrame | None = None) -> pd.Series:
         if not self._models:
-            raise RuntimeError("Modelo não treinado.")
+            raise RuntimeError("Model not trained.")
         if exog_future is None or exog_future.empty:
-            raise ValueError("O pool precisa dos indicadores contemporâneos (exog_future).")
+            raise ValueError("The pool needs the contemporaneous indicators (exog_future).")
         preds = []
         for comp_name, bridge in self._models.items():
             cols = self.components[comp_name]
@@ -46,7 +46,7 @@ class PoolModel(NowcastModel):
                 continue
             preds.append(bridge.forecast(steps, exog_future[cols + self._covid_cols]))
         if not preds:
-            raise ValueError("Nenhuma bridge do pool tem indicadores disponíveis.")
+            raise ValueError("No bridge in the pool has indicators available.")
         mean = sum(p.values for p in preds) / len(preds)
         return pd.Series(mean, name="pib_growth")
 
