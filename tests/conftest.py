@@ -1,3 +1,6 @@
+"""Pytest configuration: puts ``src/`` and the project root on ``sys.path`` so the
+tests can import the ``gdp_nowcast`` package and ``config``.
+"""
 import os
 import sys
 
