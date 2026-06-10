@@ -44,6 +44,27 @@ def transform_indicator(series: pd.Series, spec) -> pd.Series:
     return q.dropna()
 
 
+def stl_sa_growth(series: pd.Series, kind: str = "qoq") -> pd.Series:
+    """Dessazonaliza um nível mensal bruto (NSA) via STL e devolve a variação
+    trimestral (% T/T) do nível dessazonalizado.
+
+    Usa uma dessazonalização PRÓPRIA (STL robusto sobre o log, período 12),
+    distinta da do BCB. Combinada com a série dessaz oficial numa bridge, a
+    divergência entre os dois métodos carrega sinal sobre a sazonalidade do PIB
+    (principal fonte de divergência IBC-Br×PIB; cf. BCB Estudo Especial 3/2018).
+    """
+    from statsmodels.tsa.seasonal import STL
+
+    s = series.dropna().astype(float)
+    s.index = pd.to_datetime(s.index)
+    lg = np.log(s)
+    res = STL(lg, period=12, robust=True).fit()
+    sa_level = np.exp(lg - res.seasonal)
+    sa_q = to_quarterly(sa_level, "mean")
+    n = 1 if kind == "qoq" else 4
+    return (sa_q.pct_change(n) * 100).dropna()
+
+
 def pib_growth(pib_index: pd.Series, kind: str = "qoq") -> pd.Series:
     """Calcula o crescimento do PIB a partir do índice trimestral.
 

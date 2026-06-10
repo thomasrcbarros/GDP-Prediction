@@ -63,9 +63,31 @@ def test_transform_indicator_growth_and_rate():
 
 
 def test_feature_sets_reference_known_series():
+    # colunas derivadas (não são séries brutas; calculadas em _prepare)
+    derived = {"ibcbr_own", *config.UMIDAS_COLS}
     for name, cols in config.FEATURE_SETS.items():
         for c in cols:
+            if c in derived:
+                continue
             assert c in config.SERIES, f"{c} do conjunto {name} não está em SERIES"
+
+
+def test_stl_sa_growth_removes_seasonality():
+    # nível com tendência + sazonalidade mensal forte
+    idx = pd.date_range("2010-01-01", periods=120, freq="MS")
+    trend = 100 + 0.3 * np.arange(120)
+    seas = 5 * np.sin(2 * np.pi * (idx.month - 1) / 12)
+    s = pd.Series(trend + seas, index=idx)
+    g = dataset.stl_sa_growth(s, "qoq")
+    assert g.index.freqstr in ("QS-JAN", "QS-OCT", "QS") or g.index.is_monotonic_increasing
+    # crescimento dessaz deve ser suave (sem o pulso sazonal): desvio pequeno
+    assert g.std() < 5.0
+    assert np.isfinite(g).all()
+
+
+def test_feature_set_a2_uses_two_seasonal_adjustments():
+    assert config.FEATURE_SETS["A2"] == ["ibcbr", "ibcbr_own"]
+    assert "ibcbr_nsa" in config.SERIES
 
 
 def test_pib_growth_qoq():

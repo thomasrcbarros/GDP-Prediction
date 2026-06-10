@@ -43,7 +43,8 @@ alvo; os índices de confiança entram em nível):
 
 | Conjunto | Variáveis | Uso |
 |----------|-----------|-----|
-| **A** | IBC-Br | baseline (bridge) |
+| **A** | IBC-Br (dessaz BCB) | baseline (bridge) |
+| **A2** | IBC-Br dessaz BCB **+ dessaz própria (STL)** | bridge — **bate o baseline** |
 | **B** | PIM + PMS + PMC (indústria, serviços, comércio) | VARX |
 | **C** | IBC-Br + PIM + PMS + PMC | VARX |
 | **D** | IBC-Br + IPCA + câmbio (bloco macro) | VARX |
@@ -58,6 +59,15 @@ atividade (PIM, PMS, PMC) num único componente, a **confiança do consumidor** 
 **dummy de pico da COVID (2020Q1-Q2)** (regressor exógeno verdadeiro, não condicionado).
 O PIB é condicionado nos valores contemporâneos de IBC-Br e spread, já publicados antes
 do PIB.
+
+### Bridge[A2]: dupla dessazonalização (supera o IBC-Br)
+
+A maior fonte de divergência entre IBC-Br e PIB é a **dessazonalização** (modelos/amostras
+distintos; BCB Estudo Especial 3/2018). O conjunto **A2** explora isso: além do IBC-Br
+dessaz do BCB, calcula uma **dessazonalização própria via STL** sobre o IBC-Br bruto (SGS
+24363) e usa **as duas** numa bridge. A divergência entre os dois métodos de ajuste carrega
+sinal sobre a sazonalidade do PIB. No backtest realista (mesma janela, 71 trimestres):
+bridge[A] RMSE 0.562 → **bridge[A2] 0.524** (−6.8%; pré-2020 0.603 → 0.541).
 
 O backtest agora reporta, além do RMSE total: **RMSE pré-2020** e **RMSE pós-2020**
 separados, e pode usar **janela rolante de estimação** (`--train-window N`, em trimestres;

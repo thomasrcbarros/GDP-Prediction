@@ -42,6 +42,8 @@ def _prepare(raw: dict[str, pd.Series], target_kind: str):
     pib_q = dataset.to_quarterly(raw["pib"], config.PIB_TARGET.agg)
     target_full = dataset.pib_growth(pib_q, kind=target_kind).dropna().rename("pib_growth")
     feats = pd.concat([feats, dataset.monthly_growth_features(raw["ibcbr"], "ibcbr")], axis=1)
+    # dessazonalização própria (STL) do IBC-Br bruto -> coluna ibcbr_own (conjunto A2)
+    feats["ibcbr_own"] = dataset.stl_sa_growth(raw["ibcbr_nsa"]).reindex(feats.index)
     return target_full, feats
 
 

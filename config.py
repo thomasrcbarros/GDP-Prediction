@@ -67,6 +67,8 @@ PIB_TARGET = SeriesSpec(
 # Registro de indicadores (todos dessazonalizados / consistentes com o alvo) --
 SERIES: dict[str, SeriesSpec] = {
     "ibcbr": SeriesSpec("ibcbr", "bcb", "24364", "M", "mean", "growth", 45),
+    # IBC-Br bruto (NSA) — base da dessazonalização própria (STL) do conjunto A2.
+    "ibcbr_nsa": SeriesSpec("ibcbr_nsa", "bcb", "24363", "M", "mean", "level", 45),
     "pim": SeriesSpec("pim", "bcb", "21859", "M", "mean", "growth", 35),
     # PMS/PMC: número-índice de volume COM ajuste sazonal (IBGE SIDRA)
     "pms": SeriesSpec("pms", "ibge", "8688:7168:11046[56726]|12355[107071]", "M", "mean", "growth", 45),
@@ -87,6 +89,7 @@ ALL_SERIES = [PIB_TARGET] + INDICATORS
 # Conjuntos de variáveis testados nos modelos multivariados ------------------
 FEATURE_SETS: dict[str, list[str]] = {
     "A": ["ibcbr"],                          # IBC-Br (prévia oficial do PIB) -> baseline
+    "A2": ["ibcbr", "ibcbr_own"],            # IBC-Br dessaz BCB + dessaz própria (STL)
     "B": ["pim", "pms", "pmc"],              # setorial (oferta)
     "C": ["ibcbr", "pim", "pms", "pmc"],    # tudo
     "D": ["ibcbr", "ipca", "cambio"],       # bloco macro
@@ -138,6 +141,7 @@ MODEL_VARIANTS: list[tuple[str, str | None]] = [
     ("arima", None),
     ("sarima", None),
     ("bridge", "A"),   # baseline (IBC-Br)
+    ("bridge", "A2"),  # IBC-Br dessaz BCB + dessaz própria (STL) -> bate o baseline
     ("umidas", "A"),   # U-MIDAS: meses 1-3 do IBC-Br irrestritos
     ("pool", "C"),     # combinação equal-weight de 3 bridges
     ("varx", "B"),
