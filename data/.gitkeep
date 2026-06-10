@@ -1,0 +1,3 @@
+# This folder holds the local CSV cache of the time series used by the project
+# (BCB SGS and IBGE). The data files are gitignored and (re)created by
+# scripts/fetch_data.py; only this placeholder is versioned.
