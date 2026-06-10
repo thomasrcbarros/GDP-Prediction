@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Downloads and caches the BCB/IBGE series into ``data/``."""
+"""Downloads and caches the BCB SGS / IBGE series into ``data/`` (CSV cache).
+
+Run with ``--refresh`` to force a new download. This is the first step of the
+pipeline; ``run_nowcast.py`` then consumes the cached series.
+"""
 from __future__ import annotations
 
 import argparse
