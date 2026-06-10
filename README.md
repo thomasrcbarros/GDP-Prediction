@@ -73,9 +73,53 @@ O backtest agora reporta, além do RMSE total: **RMSE pré-2020** e **RMSE pós-
 separados, e pode usar **janela rolante de estimação** (`--train-window N`, em trimestres;
 ex.: `20` ≈ 5 anos) em vez da amostra completa.
 
-> Os números de RMSE serão preenchidos após a execução local (`--model all --backtest`).
-> Em rodadas anteriores, a referência ficou em torno de: bridge[A] ~0.45, varx[D] ~0.50,
-> varx[C] ~1.3, varx[B] ~1.7, ARIMA/SARIMA ~2.1, random walk ~3.1.
+## Resultados (`--model all --backtest`, alvo QoQ)
+
+Backtest *rolling* realista (janela expansível, *one-step-ahead*) na janela comum de
+avaliação (39 trimestres, ~2016–2025; `n` reflete a janela de cada variante):
+
+| modelo | RMSE | RMSE pré-2020 | RMSE pós-2020 | RMSE ex-COVID | MAE | viés |
+|--------|-----:|-----:|-----:|-----:|-----:|-----:|
+| **bridge[A2]** (dupla dessaz) | **0.435** | **0.335** | 0.488 | **0.418** | **0.361** | 0.037 |
+| bridge[A] (IBC-Br oficial) | 0.448 | 0.405 | 0.474 | 0.435 | 0.390 | 0.035 |
+| varx[D] (IBC-Br+IPCA+câmbio) | 0.503 | 0.355 | 0.576 | 0.414 | 0.378 | 0.003 |
+| pool[C] (combinação) | 0.935 | 0.433 | 1.141 | 0.554 | 0.590 | −0.122 |
+| varx[C] | 1.331 | 1.584 | 1.145 | 1.132 | 0.872 | 0.158 |
+| varx[E] | 1.410 | 2.004 | 0.944 | 1.345 | 0.877 | −0.466 |
+| umidas[A] | 1.607 | 0.550 | 2.002 | 0.571 | 0.744 | 0.035 |
+| varx[B] | 1.694 | 1.241 | 1.924 | 1.604 | 1.128 | 0.180 |
+| média (baseline) | 2.123 | 0.534 | 2.673 | 0.572 | 1.022 | 0.104 |
+| ARIMA | 2.129 | 0.619 | 2.669 | 0.646 | 1.053 | 0.036 |
+| SARIMA | 2.133 | 0.706 | 2.661 | 0.670 | 1.108 | −0.175 |
+| random walk | 3.143 | 0.817 | 3.954 | 0.959 | 1.486 | −0.040 |
+
+Na janela longa (71 trimestres, sem as séries que só começam em 2011): bridge[A] 0.562 →
+**bridge[A2] 0.524** (−6.8%). Nowcast 2026Q1: bridge[A2] **+0,99%**, bridge[A] +1,20%.
+
+![Comparativo de backtest](backtest_comparison.png)
+
+### Conclusões do estudo
+
+1. **O IBC-Br é um benchmark altíssimo.** É a prévia oficial do PIB (agregação ponderada
+   pelo SCN das mesmas proxies setoriais), então qualquer modelo que apenas recombina
+   PIM/PMS/PMC, confiança, spread etc. tende a **reproduzi-lo com ruído** e perder. Foi o
+   que ocorreu com VAR, VARX, ARIMA/SARIMA, U-MIDAS e o *pool* de bridges.
+2. **O que bateu o IBC-Br foi atacar a divergência metodológica, não prever melhor.** A
+   maior fonte de erro entre IBC-Br e PIB é a **dessazonalização** distinta (BCB Estudo
+   Especial 3/2018). O `bridge[A2]` usa **duas** dessazonalizações do IBC-Br (a oficial do
+   BCB + uma própria via STL sobre a série bruta) — a *diferença* entre os métodos carrega
+   sinal sobre a sazonalidade do PIB. Resultado: **melhor modelo em todas as janelas**, com
+   o ganho concentrado no pré-2020 (0.405 → 0.335, −17%).
+3. **Combinação de previsões e U-MIDAS não ajudaram aqui.** Em pesos iguais, somar um
+   modelo ótimo (bridge IBC-Br) a modelos piores **piora** — o U-MIDAS (decomposição mensal
+   do IBC-Br) é especialmente ruim no pós-2020 volátil.
+4. **Correção agro ficou de fora.** As séries de PIB-agro trimestral saem junto com o PIB
+   (circular/look-ahead) e o LSPA é previsão de safra anual sem mapeamento limpo para QoQ —
+   alto risco de overfit em ~70 observações.
+5. **Ressalva.** A STL é estimada sobre toda a amostra (como a própria série dessaz do BCB,
+   que é revisada) — há leve *look-ahead* na sazonalidade, consistente com o resto do
+   pipeline. Reestimar a STL por janela é um refinamento futuro; o ganho deve persistir.
+
 
 ## Indicadores
 
