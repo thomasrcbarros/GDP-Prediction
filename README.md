@@ -18,6 +18,11 @@ equation** com *backtesting* rolling e avaliação explícita de **look-ahead bi
 | VAR | multivariado | sistema conjunto; **prevê** os indicadores |
 | VARX | multivariado | VAR conjunto, mas **condiciona** o PIB nos indicadores contemporâneos já publicados |
 | bridge | regressão | regride o PIB nos indicadores contemporâneos já publicados |
+| umidas | regressão | U-MIDAS: meses 1-3 do IBC-Br dentro do trimestre como regressores irrestritos (Foroni-Marcellino-Schumacher, 2015) |
+| pool | combinação | média com pesos iguais de 3 bridges — bridge IBC-Br, U-MIDAS e bridge setorial (PIM+PMS+PMC); literatura de forecast combination |
+
+As variantes **umidas[A]** e **pool[C]** entram no backtest com a meta de **bater a
+baseline bridge[A]**.
 
 ARIMA/SARIMA apenas extrapolam o passado do PIB. O VAR prevê os próprios indicadores —
 desperdiçando a vantagem do nowcasting. **VARX** e **bridge** exploram a real vantagem: os

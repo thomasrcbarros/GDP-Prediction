@@ -41,6 +41,7 @@ def _prepare(raw: dict[str, pd.Series], target_kind: str):
     feats = pd.DataFrame(cols).sort_index()
     pib_q = dataset.to_quarterly(raw["pib"], config.PIB_TARGET.agg)
     target_full = dataset.pib_growth(pib_q, kind=target_kind).dropna().rename("pib_growth")
+    feats = pd.concat([feats, dataset.monthly_growth_features(raw["ibcbr"], "ibcbr")], axis=1)
     return target_full, feats
 
 
@@ -79,6 +80,13 @@ def _exog_for(model_name, feature_set, index, feats):
     """
     if _is_varx_e(model_name, feature_set):
         return _exog_e(index, feats)
+    if model_name == "umidas":
+        ind = feats[config.UMIDAS_COLS].reindex(index)
+        return pd.concat([ind, dataset.covid_dummies(index)], axis=1)
+    if model_name == "pool":
+        cols = sorted({c for comp in config.POOL_COMPONENTS.values() for c in comp})
+        ind = feats[cols].reindex(index)
+        return pd.concat([ind, dataset.covid_dummies(index)], axis=1)
     cols = config.FEATURE_SETS[feature_set]
     ind = feats[cols].reindex(index)
     if model_name == "bridge":
@@ -94,6 +102,8 @@ def _model_factory(model_name, feature_set):
         return lambda: MODELS[model_name](exog_cols=config.VARX_E_EXOG_COLS)
     if _uses_covid_dummy(model_name, feature_set):
         return lambda: MODELS[model_name](exog_cols=["covid_peak"])
+    if model_name == "pool":
+        return lambda: MODELS["pool"](components=config.POOL_COMPONENTS)
     return lambda: MODELS[model_name]()
 
 
@@ -101,9 +111,9 @@ def nowcast(raw, model_name="arima", feature_set=None, target_kind="qoq") -> dic
     """Gera o nowcast do próximo trimestre do PIB para um (modelo, conjunto)."""
     target_full, feats = _prepare(raw, target_kind)
     next_q = target_full.index.max() + pd.offsets.QuarterBegin(1, startingMonth=1)
-    model = MODELS[model_name]()
 
     if model_name in UNIVARIATE:
+        model = MODELS[model_name]()
         exog = dataset.covid_dummies(target_full.index)
         model.fit(target_full, exog)
         fc = model.forecast(1, exog_future=dataset.covid_dummies(pd.DatetimeIndex([next_q])))
@@ -122,13 +132,14 @@ def nowcast(raw, model_name="arima", feature_set=None, target_kind="qoq") -> dic
             if fut[ind_cols].isna().any().any():
                 raise ValueError(f"Indicadores de {next_q.year}Q{next_q.quarter} indisponíveis.")
         fc = model.forecast(1, exog_future=fut)
-    elif model_name == "bridge":
+    elif model_name in ("bridge", "umidas", "pool"):
+        model = _model_factory(model_name, feature_set)()
         idx = pd.DatetimeIndex(list(target_full.index) + [next_q])
-        exog = _exog_for("bridge", feature_set, idx, feats)
+        exog = _exog_for(model_name, feature_set, idx, feats)
         train = pd.concat([target_full, exog.loc[target_full.index]], axis=1).dropna()
         model.fit(train["pib_growth"], train[exog.columns])
         fut = exog.loc[[next_q]]
-        if fut.isna().any().any():
+        if model_name != "pool" and fut.isna().any().any():
             raise ValueError(f"Indicadores de {next_q.year}Q{next_q.quarter} indisponíveis.")
         fc = model.forecast(1, exog_future=fut)
     else:

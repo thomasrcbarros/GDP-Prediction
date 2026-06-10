@@ -58,7 +58,21 @@ def pib_growth(pib_index: pd.Series, kind: str = "qoq") -> pd.Series:
     raise ValueError("kind deve ser 'qoq' ou 'yoy'")
 
 
-COVID_QUARTERS = ["2020-01-01", "2020-04-01", "2020-07-01", "2020-10-01"]
+def monthly_growth_features(series: pd.Series, prefix: str) -> pd.DataFrame:
+    """Variações % m/m do nível mensal dessaz, pivotadas em colunas
+    {prefix}_m1/{prefix}_m2/{prefix}_m3 por trimestre (índice QS)."""
+    g = (series.pct_change(1) * 100).dropna()
+    pos = (g.index.month - 1) % 3 + 1
+    quarter = g.index.to_period("Q").to_timestamp()
+    df = pd.DataFrame({"q": quarter, "pos": pos, "val": g.values})
+    wide = df.pivot_table(index="q", columns="pos", values="val", aggfunc="first")
+    wide = wide.reindex(columns=[1, 2, 3])
+    wide.columns = [f"{prefix}_m{m}" for m in (1, 2, 3)]
+    wide.index.name = None
+    return wide.sort_index()
+
+
+COVID_QUARTERS =["2020-01-01", "2020-04-01", "2020-07-01", "2020-10-01"]
 
 
 def covid_dummies(index: pd.DatetimeIndex) -> pd.DataFrame:

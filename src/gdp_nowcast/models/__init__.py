@@ -5,6 +5,7 @@ from .sarima import SarimaModel
 from .var import VarModel
 from .varx import VarxModel
 from .bridge import BridgeModel
+from .pool import PoolModel
 
 MODELS = {
     "arima": ArimaModel,
@@ -12,6 +13,8 @@ MODELS = {
     "var": VarModel,
     "varx": VarxModel,
     "bridge": BridgeModel,
+    "umidas": BridgeModel,
+    "pool": PoolModel,
 }
 
-__all__ = ["ArimaModel", "SarimaModel", "VarModel", "VarxModel", "BridgeModel", "MODELS"]
+__all__ = ["ArimaModel", "SarimaModel", "VarModel", "VarxModel", "BridgeModel", "PoolModel", "MODELS"]

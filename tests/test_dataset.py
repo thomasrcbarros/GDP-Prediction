@@ -112,3 +112,20 @@ def test_build_dataset_respects_lag_no_lookahead():
         for q in col.index:
             pub = q + pd.offsets.QuarterEnd(0) + pd.Timedelta(days=spec.publication_lag_days)
             assert pub <= as_of, f"vazamento em {spec.name} no trimestre {q}"
+
+
+def test_monthly_growth_features_pivots_months_into_quarter_columns():
+    # 7 meses: jan-jul/2020; crescimento constante de 1 unidade sobre base 100
+    s = _monthly("2020-01-01", 7, step=1.0, base=100.0)
+    out = dataset.monthly_growth_features(s, "ibcbr")
+    assert list(out.columns) == ["ibcbr_m1", "ibcbr_m2", "ibcbr_m3"]
+    # m1 do Q1 é NaN (pct_change descarta o 1º mês)
+    q1 = pd.Timestamp("2020-01-01")
+    q2 = pd.Timestamp("2020-04-01")
+    q3 = pd.Timestamp("2020-07-01")
+    assert np.isnan(out.loc[q1, "ibcbr_m1"])
+    assert abs(out.loc[q1, "ibcbr_m2"] - 1.0) < 1e-9   # 101/100 - 1
+    assert abs(out.loc[q2, "ibcbr_m1"] - 100 * (103 / 102 - 1)) < 1e-9
+    # Q3 incompleto: só m1 observado, m2/m3 NaN
+    assert not np.isnan(out.loc[q3, "ibcbr_m1"])
+    assert np.isnan(out.loc[q3, "ibcbr_m2"]) and np.isnan(out.loc[q3, "ibcbr_m3"])

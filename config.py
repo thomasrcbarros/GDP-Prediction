@@ -113,6 +113,17 @@ VARX_E = {
 # Colunas exógenas verdadeiras do VARX[E] (fator PCA + confiança + dummy COVID).
 VARX_E_EXOG_COLS = [VARX_E["pca_name"], *VARX_E["exog_observed"], "covid_peak"]
 
+# U-MIDAS / pool de bridges -------------------------------------------------
+# U-MIDAS (Foroni-Marcellino-Schumacher, 2015): meses 1-3 do IBC-Br dentro do
+# trimestre como regressores irrestritos da bridge.
+UMIDAS_COLS = ["ibcbr_m1", "ibcbr_m2", "ibcbr_m3"]
+# Pool com pesos iguais de 3 bridges (forecast combination).
+POOL_COMPONENTS = {
+    "bridge_ibcbr": ["ibcbr"],
+    "umidas_ibcbr": UMIDAS_COLS,
+    "bridge_setorial": ["pim", "pms", "pmc"],
+}
+
 # Baseline de referência do projeto: o IBC-Br é a prévia oficial do PIB (BCB),
 # então a bridge sobre o IBC-Br é o padrão a ser superado pelos demais modelos.
 BASELINE_VARIANT = ("bridge", "A")
@@ -127,6 +138,8 @@ MODEL_VARIANTS: list[tuple[str, str | None]] = [
     ("arima", None),
     ("sarima", None),
     ("bridge", "A"),   # baseline (IBC-Br)
+    ("umidas", "A"),   # U-MIDAS: meses 1-3 do IBC-Br irrestritos
+    ("pool", "C"),     # combinação equal-weight de 3 bridges
     ("varx", "B"),
     ("varx", "C"),
     ("varx", "D"),
